@@ -1,0 +1,6 @@
+# Hand-authored for the demo client -- a real client's list would typically be longer and would
+# come from client_setup.py's --from-docs draft, then human review, rather than by hand.
+do_not_say:
+  - "guaranteed for life"
+  - "the best in the industry"
+  - "FDA approved"   # Contoso instruments are not a medical device; this claim would be false

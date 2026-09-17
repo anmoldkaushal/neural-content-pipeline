@@ -1,0 +1,10 @@
+presets:
+  - name: technical_precise
+    description: "Spec-forward, plain, assumes an engineering audience. No hedging, no hype."
+    sample_line: "The TI-4200 holds plus or minus 0.02 millimeters repeatability across a 200,000-cycle test run."
+  - name: procurement_focused
+    description: "Speaks to buyers/purchasing, not just engineers -- lead time, total cost, support."
+    sample_line: "Standard lead time is 6 weeks; expedited fabrication is available for qualified orders."
+  - name: case_study
+    description: "Narrative, outcome-first -- what a specific customer measured before and after."
+    sample_line: "Before switching to the TI-4200, their QA team was re-measuring 1 in 8 parts by hand."

@@ -1,0 +1,15 @@
+Contoso Test Instruments -- Company Backgrounder (synthetic demo data)
+
+Contoso Test Instruments was founded in 2011 and designs precision measurement equipment for
+industrial quality-assurance labs. The company's flagship product, the TI-4200 coordinate
+measuring probe, holds a repeatability tolerance of plus or minus 0.02 millimeters across a
+200,000-cycle test run, independently verified by an internal engineering test in 2024.
+
+Standard lead time for a TI-4200 order is 6 weeks; expedited fabrication is available for
+qualified orders at an additional cost. The TI-4200 is compliant with ISO 10360-2 for coordinate
+measuring machine testing.
+
+Contoso's support team offers same-business-day response for support tickets filed by customers
+on an active service contract. The company is headquartered in a fictional location for this
+demo and has no real address, phone number, or ongoing operations -- all details in this document
+are synthetic and invented for pipeline testing purposes only.

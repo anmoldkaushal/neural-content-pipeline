@@ -1,0 +1,137 @@
+"""Typed contracts shared by every stage. Nothing in pipeline/ passes untyped dicts between
+stages — every hand-off is a Pydantic model, so a malformed stage output fails loudly at the
+boundary instead of silently corrupting the next stage's input."""
+from __future__ import annotations
+
+import datetime as dt
+from enum import Enum
+from typing import Any, Optional
+
+from pydantic import BaseModel, Field
+
+
+class Brief(BaseModel):
+    """The task: what the human is asking for."""
+
+    client_id: str
+    goal: str
+    audience: str
+    format: str  # e.g. "blog_post", "email", "social_post", "landing_page"
+    target_word_count: Optional[int] = None
+    angle_hint: Optional[str] = None
+    deadline: Optional[dt.date] = None
+    notes: Optional[str] = None
+
+
+class ProvenanceEntry(BaseModel):
+    """One verified (or pending) fact. Same shape as neural-pnotp-gtm's provenance.json."""
+
+    claim: str
+    type: str = "fact"  # "client" | "credential" | "metric" | "fact"
+    source: str
+    confirmed: bool = False
+    confirmed_by: Optional[str] = None
+    date: Optional[dt.date] = None
+
+
+class KBEntry(BaseModel):
+    """One compiled fact in a client's knowledge base."""
+
+    id: str
+    claim: str
+    source_doc: str
+    location: Optional[str] = None  # e.g. page number, section heading
+    verified_at: Optional[dt.date] = None
+    confirmed_by: Optional[str] = None
+    status: str = "pending"  # "pending" | "verified" | "stale" | "rejected"
+
+
+class IngestedDocument(BaseModel):
+    """Output of pipeline/ingest/: raw text plus how it was extracted."""
+
+    doc_id: str
+    source_path: str
+    format: str  # "txt" | "md" | "docx" | "pdf" | "png" | "jpg" | ...
+    extraction_method: str  # "native" | "text_layer" | "ocr"
+    page_count: Optional[int] = None
+    raw_text: str = ""
+    warnings: list[str] = Field(default_factory=list)
+    ingested_at: dt.datetime = Field(default_factory=dt.datetime.utcnow)
+
+
+class TonePreset(BaseModel):
+    name: str
+    description: str
+    sample_line: str
+
+
+class ClientProfile(BaseModel):
+    client_id: str
+    company_name: str
+    industry: str
+    website: Optional[str] = None
+    synthetic: bool = False
+    tone_presets: list[TonePreset] = Field(default_factory=list)
+    banned_words: list[str] = Field(default_factory=list)  # EXTRA_BANNED_WORDS, additive only
+    banned_phrases: list[str] = Field(default_factory=list)  # EXTRA_BANNED_PHRASES, additive only
+    do_not_say: list[str] = Field(default_factory=list)  # from constraints.yaml
+
+
+class Angle(BaseModel):
+    headline: str
+    pitch: str
+    structure: list[str] = Field(default_factory=list)
+    claims_used: list[str] = Field(default_factory=list)  # KBEntry ids
+
+
+class ToneChoice(BaseModel):
+    preset_name: str
+    resolved_style_checklist: dict[str, Any] = Field(default_factory=dict)
+
+
+class MicrocopyField(str, Enum):
+    TITLE = "title"
+    SUBTITLE = "subtitle"
+    HOOK = "hook"
+    CTA = "cta"
+
+
+class MicrocopyCandidate(BaseModel):
+    field: MicrocopyField
+    text: str
+    strategy: str = ""  # e.g. "benefit-led", "urgency-led", "curiosity-led"
+    score: Optional[float] = None
+
+
+class Draft(BaseModel):
+    job_id: str
+    body: str
+    word_count: int
+    outline: list[str] = Field(default_factory=list)
+    claims_used: list[str] = Field(default_factory=list)  # KBEntry ids the body actually leans on
+    revision: int = 0
+
+
+class GateStatus(str, Enum):
+    PASSED = "passed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class GateResult(BaseModel):
+    gate_name: str
+    status: GateStatus
+    detail: str
+    flagged_items: list[str] = Field(default_factory=list)
+
+
+class JobRecord(BaseModel):
+    job_id: str
+    client_id: str
+    brief_summary: str
+    stages_run: list[str] = Field(default_factory=list)
+    gate_results: list[GateResult] = Field(default_factory=list)
+    retry_count: dict[str, int] = Field(default_factory=dict)
+    human_touchpoints: list[str] = Field(default_factory=list)
+    created_at: dt.datetime = Field(default_factory=dt.datetime.utcnow)
+    status: str = "in_progress"  # "in_progress" | "awaiting_human" | "complete" | "failed"

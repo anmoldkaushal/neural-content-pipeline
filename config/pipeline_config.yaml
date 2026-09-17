@@ -1,0 +1,13 @@
+# Tunable knobs, loaded by pipeline/config.py. Every consumer falls back to the same default it
+# would use if this file didn't exist -- edit here to change behavior without touching code.
+
+retry_budget_per_gate: 2
+
+microcopy_caps:
+  title: 3
+  subtitle: 3
+  hook: 5
+  cta: 5
+
+transport:
+  default: cli   # cli | sdk | off -- overridden at runtime by CONTENT_JUDGE_TRANSPORT

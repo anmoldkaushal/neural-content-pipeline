@@ -1,0 +1,7 @@
+client_id: exemplar
+company_name: "Contoso Test Instruments"
+industry: "Precision measurement equipment (B2B, industrial)"
+website: "https://example.com"
+synthetic: true   # every fact below is invented; example.com is an RFC 2606 reserved domain
+extra_banned_words: []
+extra_banned_phrases: []

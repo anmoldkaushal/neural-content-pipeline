@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.env
+
+# Job artifacts -- generated at runtime, never committed.
+output/*
+!output/.gitkeep
+
+# Real client source docs never enter git; the synthetic exemplar and the blank template are the
+# exceptions (their contents are safe/empty by construction).
+clients/*/knowledge_base/documents/*
+!clients/exemplar/knowledge_base/documents/*
+!clients/_template/knowledge_base/documents/*
+!clients/*/knowledge_base/documents/.gitkeep

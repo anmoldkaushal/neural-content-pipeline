@@ -1,0 +1,42 @@
+[
+  {
+    "claim": "The TI-4200 holds a repeatability tolerance of plus or minus 0.02 millimeters across a 200,000-cycle test run.",
+    "type": "metric",
+    "source": "synthetic demo document: company_backgrounder.txt (invented data, not a real product)",
+    "confirmed": true,
+    "confirmed_by": "demo seed data (synthetic)",
+    "date": "2026-09-01"
+  },
+  {
+    "claim": "Standard lead time for a TI-4200 order is 6 weeks.",
+    "type": "fact",
+    "source": "synthetic demo document: company_backgrounder.txt (invented data, not a real product)",
+    "confirmed": true,
+    "confirmed_by": "demo seed data (synthetic)",
+    "date": "2026-09-01"
+  },
+  {
+    "claim": "The TI-4200 is compliant with ISO 10360-2 for coordinate measuring machine testing.",
+    "type": "fact",
+    "source": "synthetic demo document: company_backgrounder.txt (invented data, not a real product)",
+    "confirmed": true,
+    "confirmed_by": "demo seed data (synthetic)",
+    "date": "2026-09-01"
+  },
+  {
+    "claim": "Contoso's support team offers same-business-day response for customers on an active service contract.",
+    "type": "fact",
+    "source": "synthetic demo document: company_backgrounder.txt (invented data, not a real product)",
+    "confirmed": true,
+    "confirmed_by": "demo seed data (synthetic)",
+    "date": "2026-09-01"
+  },
+  {
+    "claim": "Contoso Test Instruments was founded in 2011.",
+    "type": "fact",
+    "source": "synthetic demo document: company_backgrounder.txt (invented data, not a real product)",
+    "confirmed": true,
+    "confirmed_by": "demo seed data (synthetic)",
+    "date": "2026-09-01"
+  }
+]

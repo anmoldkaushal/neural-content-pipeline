@@ -1,0 +1,11 @@
+# DRAFT — agent-generated, review before use
+presets:
+  - name: Factual FAQ
+    description: "Direct question-and-answer tone for support and product-question content; states the answer plainly with no filler."
+    sample_line: "TestCo Insights integrates with three major point-of-sale platforms at launch, with additional integrations planned."
+  - name: Product Overview
+    description: "Slightly more descriptive tone for about/overview copy; introduces the product and its core function before stating a concrete capability."
+    sample_line: "TestCo Insights processes inventory updates with an average latency of under 4 seconds."
+  - name: Offer/CTA
+    description: "Brief, concrete tone for calls to action like trials or signup terms; states the offer and its exact conditions."
+    sample_line: "TestCo offers a 14-day free trial with no credit card required."

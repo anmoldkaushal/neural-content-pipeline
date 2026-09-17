@@ -1,0 +1,8 @@
+TestCo Analytics -- Frequently Asked Questions (synthetic demo data)
+
+Q: What platforms does TestCo Insights integrate with?
+A: TestCo Insights integrates with three major point-of-sale platforms at launch, with additional
+integrations planned.
+
+Q: Is there a free trial?
+A: TestCo offers a 14-day free trial with no credit card required.

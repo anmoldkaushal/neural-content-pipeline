@@ -1,0 +1,5 @@
+TestCo Analytics (synthetic demo data for pipeline testing)
+
+TestCo Analytics builds dashboard software for retail inventory teams. The product, TestCo
+Insights, was launched in 2022 and currently supports integrations with three major point-of-sale
+platforms. TestCo Insights processes inventory updates with an average latency of under 4 seconds.
