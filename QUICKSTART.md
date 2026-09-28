@@ -48,13 +48,28 @@ want that coverage; everything else (including text-layer PDF extraction) runs r
 Steps 1-5 are a one-time cost per client (steps 4-5 repeat only when new documents show up, and
 only on the delta) -- a second brief for the same client skips straight to step 6.
 
-## Picking an angle or tone for a job
+## The local UI
 
-`run` defaults to angle candidate 0 and the client's first tone preset. Override either:
+```bash
+pip install -e ".[ui]"
+streamlit run ui/app.py
+```
+
+**Generate**: pick a client and content type, write the prompt (audience, word count and
+must-follow notes are pre-filled from that client's last brief of the same type in
+`local_briefs/<client>/`), pick a tone preset or a custom one. Then choose an angle, then the
+micro-copy (options marked ⚠ would fail the micro-copy gate). The result shows with copy buttons
+and a PDF download. **Knowledge base**: tick facts and Verify or Delete them (enter your name in
+the sidebar first; it is recorded as `confirmed_by`), add a fact you know first-hand, or upload
+documents and compile. Deleted facts are kept as `rejected`, so a later compile won't propose
+them again. **Jobs**: history and success rates per client. **New client**: the same steps as the
+CLI below (scaffold, draft profile from documents, compile), then review in Knowledge base.
+
+## Picking an angle or tone from the CLI
+
+`run` defaults to angle candidate 0, the client's first tone preset, and the first unflagged
+micro-copy option per field. Override the first two:
 
 ```bash
 python -m pipeline.cli run --client acme --brief brief.yaml --angle-index 1 --tone case_study
 ```
-
-A future version will surface the angle menu interactively before drafting; v1 requires knowing
-the index/name up front (see `PIPELINE_STATUS.md` for what's deferred).

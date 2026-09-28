@@ -28,7 +28,9 @@ def _find_hits(body: str, terms: list[str]) -> list[str]:
     return [t for t in terms if t.lower() in lowered]
 
 
-def run(draft: Draft, profile: ClientProfile) -> GateResult:
+def find_violations(text: str, profile: ClientProfile) -> list[str]:
+    """Banned words/phrases and dashes -- the length-independent checks, reused by
+    microcopy_lint.py so short copy is held to the same house rules as the body."""
     banned_words = list(BASE_BANNED_WORDS)
     for w in profile.banned_words:
         if w.lower() not in {b.lower() for b in banned_words}:
@@ -40,11 +42,16 @@ def run(draft: Draft, profile: ClientProfile) -> GateResult:
             banned_phrases.append(p)
 
     flagged: list[str] = []
-    flagged += [f"banned word: {w!r}" for w in _find_hits(draft.body, banned_words)]
-    flagged += [f"banned phrase: {p!r}" for p in _find_hits(draft.body, banned_phrases)]
+    flagged += [f"banned word: {w!r}" for w in _find_hits(text, banned_words)]
+    flagged += [f"banned phrase: {p!r}" for p in _find_hits(text, banned_phrases)]
 
-    if "—" in draft.body or "–" in draft.body:
+    if "—" in text or "–" in text:
         flagged.append("em-dash or en-dash present")
+    return flagged
+
+
+def run(draft: Draft, profile: ClientProfile) -> GateResult:
+    flagged = find_violations(draft.body, profile)
 
     word_count = len(re.findall(r"\S+", draft.body))
     if word_count < MIN_WORDS:

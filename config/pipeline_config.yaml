@@ -11,3 +11,23 @@ microcopy_caps:
 
 transport:
   default: cli   # cli | sdk | off -- overridden at runtime by CONTENT_JUDGE_TRANSPORT
+
+# Per content type: which micro-copy fields the menu offers (field -> candidate count) and the
+# default target word count the UI pre-fills. A format not listed here falls back to
+# microcopy_caps above (title/subtitle/hook/cta).
+formats:
+  email:
+    target_word_count: 150
+    microcopy: {subject_line: 5, preheader: 3, cta: 3}
+  linkedin_message:
+    target_word_count: 90
+    microcopy: {opener: 3, cta: 3}
+  social_post:
+    target_word_count: 80
+    microcopy: {hook: 5, cta: 3}
+  blog_post:
+    target_word_count: 600
+    microcopy: {title: 3, subtitle: 3, hook: 5, cta: 5}
+  landing_page:
+    target_word_count: 400
+    microcopy: {headline: 3, subheadline: 3, cta: 5}

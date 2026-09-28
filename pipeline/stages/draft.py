@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
+from pipeline.kb.approved_examples import format_example_block
 from pipeline.llm.transport import ClaudeTransport, call_json
 from pipeline.schemas import Draft
 
@@ -19,7 +20,13 @@ def write_draft(
 ) -> Draft:
     transport = transport or ClaudeTransport()
     template = _PROMPT_PATH.read_text(encoding="utf-8")
-    prompt = f"{template}\n\nWorking spec:\n{working_spec}"
+    # approved_examples is prompt context, not part of the spec itself -- kept out of the dict
+    # dump below so it isn't duplicated in the prompt.
+    examples = working_spec.get("approved_examples") or []
+    working_spec_for_prompt = {k: v for k, v in working_spec.items() if k != "approved_examples"}
+    prompt = (
+        f"{template}\n{format_example_block(examples)}\nWorking spec:\n{working_spec_for_prompt}"
+    )
 
     parsed, result = call_json(transport, system_prompt="", user_prompt=prompt)
     if not result.ok or not isinstance(parsed, dict):

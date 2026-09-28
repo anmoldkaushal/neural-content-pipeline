@@ -12,12 +12,15 @@ dependencies = [
     "pytesseract>=0.3.10",
     "pdf2image>=1.17",
     "Pillow>=10.0",
+    "reportlab>=4.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
-    "reportlab>=4.0",
+]
+ui = [
+    "streamlit>=1.39",
 ]
 
 [build-system]

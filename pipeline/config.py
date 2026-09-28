@@ -34,3 +34,21 @@ def microcopy_cap(field_name: str, fallback: int) -> int:
 
 def transport_default() -> str:
     return str(load().get("transport", {}).get("default", "cli"))
+
+
+def formats() -> dict[str, dict[str, Any]]:
+    return dict(load().get("formats") or {})
+
+
+def microcopy_fields(format_: str | None, fallback: dict[str, int]) -> dict[str, int]:
+    """Field -> candidate count for a content type. Unknown or missing formats get the generic
+    title/subtitle/hook/cta set, each capped by microcopy_caps."""
+    spec = formats().get(format_ or "", {}).get("microcopy")
+    if spec:
+        return {str(k): int(v) for k, v in spec.items()}
+    return {name: microcopy_cap(name, count) for name, count in fallback.items()}
+
+
+def default_word_count(format_: str) -> int | None:
+    value = formats().get(format_, {}).get("target_word_count")
+    return int(value) if value is not None else None

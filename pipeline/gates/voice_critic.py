@@ -7,13 +7,25 @@ from pathlib import Path
 from typing import Optional
 
 from pipeline.llm.transport import ClaudeTransport, call_json
-from pipeline.schemas import ClientProfile, Draft, GateResult, GateStatus
+from pipeline.schemas import ClientProfile, Draft, GateResult, GateStatus, ToneChoice
 
 _PROMPT_PATH = Path(__file__).resolve().parent.parent / "llm" / "prompts" / "voice_critic.md"
 
 
+def _chosen_tone_line(tone: Optional[ToneChoice]) -> str:
+    if tone is None:
+        return ""
+    line = f"Tone chosen for this piece: {tone.preset_name} — {tone.resolved_style_checklist.get('tone_description', '')}"
+    if tone.ad_hoc:
+        line += " (a one-off tone a human chose for this job, not a preset; judge against it)"
+    return line + "\n"
+
+
 def run(
-    draft: Draft, profile: ClientProfile, transport: Optional[ClaudeTransport] = None
+    draft: Draft,
+    profile: ClientProfile,
+    transport: Optional[ClaudeTransport] = None,
+    tone: Optional[ToneChoice] = None,
 ) -> GateResult:
     transport = transport or ClaudeTransport()
     template = _PROMPT_PATH.read_text(encoding="utf-8")
@@ -22,7 +34,8 @@ def run(
     user_prompt = (
         f"{template}\n\n"
         f"Client: {profile.company_name} ({profile.industry})\n"
-        f"Approved tone presets: {style_guide_summary}\n\n"
+        f"Approved tone presets: {style_guide_summary}\n"
+        f"{_chosen_tone_line(tone)}\n"
         f"--- DRAFT ---\n{draft.body}\n--- END DRAFT ---"
     )
 

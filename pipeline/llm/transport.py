@@ -82,7 +82,9 @@ class ClaudeTransport:
         combined = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
         cmd = [self._cli_path, "-p", "--model", self.model, combined]
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=self.timeout)
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=self.timeout, stdin=subprocess.DEVNULL
+            )
         except subprocess.TimeoutExpired:
             return LLMResult(available=False, error=f"claude -p timed out after {self.timeout}s")
         except OSError as exc:

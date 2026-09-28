@@ -5,9 +5,13 @@ from __future__ import annotations
 from pipeline.schemas import ClientProfile, Draft, GateResult, GateStatus
 
 
+def find_hits(text: str, profile: ClientProfile) -> list[str]:
+    lowered = text.lower()
+    return [term for term in profile.do_not_say if term.lower() in lowered]
+
+
 def run(draft: Draft, profile: ClientProfile) -> GateResult:
-    lowered = draft.body.lower()
-    hits = [term for term in profile.do_not_say if term.lower() in lowered]
+    hits = find_hits(draft.body, profile)
     if hits:
         return GateResult(
             gate_name="client_constraints",

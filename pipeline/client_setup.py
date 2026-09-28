@@ -4,9 +4,12 @@ onboarding itself)."""
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 from typing import Optional
+
+import yaml
 
 from pipeline.ingest import ingest_document
 from pipeline.llm.transport import ClaudeTransport, call_json
@@ -15,7 +18,12 @@ _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "clients" / "_template"
 _PROMPT_PATH = Path(__file__).resolve().parent / "llm" / "prompts" / "client_profile_draft.md"
 
 
+_CLIENT_ID = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
 def init_client(client_id: str, clients_root: Path, from_docs: Optional[Path] = None) -> Path:
+    if not _CLIENT_ID.match(client_id):
+        raise ValueError(f"client id {client_id!r} must be lowercase letters, digits, '-' or '_'")
     target = clients_root / client_id
     if target.exists():
         raise FileExistsError(f"clients/{client_id} already exists")
@@ -27,14 +35,22 @@ def init_client(client_id: str, clients_root: Path, from_docs: Optional[Path] = 
     client_yaml.write_text(text.replace("client_id: TEMPLATE", f"client_id: {client_id}"), encoding="utf-8")
 
     if from_docs is not None:
-        _draft_profile(target, from_docs)
+        draft_profile(target, from_docs)
 
     return target
 
 
-def _draft_profile(client_dir: Path, from_docs: Path) -> None:
+def set_identity(client_dir: Path, company_name: str, industry: str, website: str = "") -> None:
+    """Fills the identity fields of a scaffolded client.yaml, leaving everything else as is."""
+    path = client_dir / "client.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    data.update(company_name=company_name, industry=industry, website=website)
+    path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+
+def draft_profile(client_dir: Path, from_docs: Path) -> None:
     transport = ClaudeTransport()
-    doc_paths = [p for p in from_docs.iterdir() if p.is_file()] if from_docs.exists() else []
+    doc_paths = [p for p in from_docs.iterdir() if p.is_file() and not p.name.startswith(".")] if from_docs.exists() else []
     combined_text = []
     for p in doc_paths:
         ingested = ingest_document(p)
@@ -79,10 +95,16 @@ def _draft_profile(client_dir: Path, from_docs: Path) -> None:
 
     constraints_path = client_dir / "constraints.yaml"
     do_not_say = parsed.get("do_not_say", [])
+    do_not_frame = parsed.get("do_not_frame", [])
     constraints_lines = ["# DRAFT — agent-generated, review before use"]
     if do_not_say:
         constraints_lines.append("do_not_say:")
         constraints_lines += [f"  - {json.dumps(term)}" for term in do_not_say]
     else:
         constraints_lines.append("do_not_say: []")
+    if do_not_frame:
+        constraints_lines.append("do_not_frame:")
+        constraints_lines += [f"  - {json.dumps(rule)}" for rule in do_not_frame]
+    else:
+        constraints_lines.append("do_not_frame: []")
     constraints_path.write_text("\n".join(constraints_lines) + "\n", encoding="utf-8")

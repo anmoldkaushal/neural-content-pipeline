@@ -44,6 +44,7 @@ class KBEntry(BaseModel):
     verified_at: Optional[dt.date] = None
     confirmed_by: Optional[str] = None
     status: str = "pending"  # "pending" | "verified" | "stale" | "rejected"
+    superseded_by: Optional[str] = None  # set on an entry once a newer kb-add replaces it
 
 
 class IngestedDocument(BaseModel):
@@ -74,7 +75,8 @@ class ClientProfile(BaseModel):
     tone_presets: list[TonePreset] = Field(default_factory=list)
     banned_words: list[str] = Field(default_factory=list)  # EXTRA_BANNED_WORDS, additive only
     banned_phrases: list[str] = Field(default_factory=list)  # EXTRA_BANNED_PHRASES, additive only
-    do_not_say: list[str] = Field(default_factory=list)  # from constraints.yaml
+    do_not_say: list[str] = Field(default_factory=list)  # literal terms, substring-checked
+    do_not_frame: list[str] = Field(default_factory=list)  # framing/positioning rules, judged
 
 
 class Angle(BaseModel):
@@ -87,9 +89,13 @@ class Angle(BaseModel):
 class ToneChoice(BaseModel):
     preset_name: str
     resolved_style_checklist: dict[str, Any] = Field(default_factory=dict)
+    ad_hoc: bool = False  # True for a one-off tone typed in for this job, not a pre-approved preset
 
 
 class MicrocopyField(str, Enum):
+    """The generic field set, used when a format has no entry under `formats` in
+    config/pipeline_config.yaml. Per-format fields (subject_line, opener, ...) are plain strings."""
+
     TITLE = "title"
     SUBTITLE = "subtitle"
     HOOK = "hook"
@@ -97,10 +103,11 @@ class MicrocopyField(str, Enum):
 
 
 class MicrocopyCandidate(BaseModel):
-    field: MicrocopyField
+    field: str
     text: str
     strategy: str = ""  # e.g. "benefit-led", "urgency-led", "curiosity-led"
     score: Optional[float] = None
+    flags: list[str] = Field(default_factory=list)  # deterministic lint hits, shown on the menu
 
 
 class Draft(BaseModel):
@@ -129,9 +136,29 @@ class JobRecord(BaseModel):
     job_id: str
     client_id: str
     brief_summary: str
+    format: str = ""  # the brief's format (email, linkedin_message, ...); "" for pre-existing jobs
     stages_run: list[str] = Field(default_factory=list)
     gate_results: list[GateResult] = Field(default_factory=list)
     retry_count: dict[str, int] = Field(default_factory=dict)
     human_touchpoints: list[str] = Field(default_factory=list)
     created_at: dt.datetime = Field(default_factory=dt.datetime.utcnow)
-    status: str = "in_progress"  # "in_progress" | "awaiting_human" | "complete" | "failed"
+    # "in_progress" | "awaiting_selection" | "awaiting_human" | "complete" | "failed"
+    status: str = "in_progress"
+    # What was chosen, so a package can be rebuilt; None/empty on jobs that predate this.
+    angle: Optional[Angle] = None
+    tone: Optional[ToneChoice] = None
+    microcopy_selected: dict[str, str] = Field(default_factory=dict)
+
+
+class JobSession(BaseModel):
+    """Between-phase state for an interactive job (output/jobs/<id>/session.json): what the menus
+    offered, so the selection phase and execute phase can run in separate calls."""
+
+    job_id: str
+    client_id: str
+    brief: Brief
+    angles: list[Angle] = Field(default_factory=list)
+    angle_index: Optional[int] = None
+    tone: Optional[ToneChoice] = None
+    microcopy_menu: dict[str, list[MicrocopyCandidate]] = Field(default_factory=dict)
+    microcopy_errors: dict[str, str] = Field(default_factory=dict)

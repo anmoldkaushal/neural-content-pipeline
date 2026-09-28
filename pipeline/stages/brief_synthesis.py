@@ -24,10 +24,13 @@ def synthesize(
         f"- [{cid}] {verified_by_id[cid].claim}" for cid in angle.claims_used if cid in verified_by_id
     )
 
+    notes_line = f"Must follow: {brief.notes}\n" if brief.notes else ""
+
     template = _PROMPT_PATH.read_text(encoding="utf-8")
     prompt = (
         f"{template}\n\nBrief: {brief.goal} (audience: {brief.audience}, format: {brief.format}, "
-        f"target words: {brief.target_word_count or 'unspecified'})\n\n"
+        f"target words: {brief.target_word_count or 'unspecified'})\n"
+        f"{notes_line}\n"
         f"Chosen angle: {angle.headline} — {angle.pitch}\nStructure: {angle.structure}\n\n"
         f"Chosen tone: {tone.preset_name} — {tone.resolved_style_checklist.get('tone_description')}\n\n"
         f"Facts available:\n{facts_block or '(none)'}"

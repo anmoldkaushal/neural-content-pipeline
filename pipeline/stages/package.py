@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from pipeline.schemas import Draft, GateResult, KBEntry, MicrocopyCandidate
 
@@ -15,6 +15,7 @@ def build_package(
     microcopy: dict[str, list[MicrocopyCandidate]],
     gate_results: list[GateResult],
     kb_entries: list[KBEntry],
+    microcopy_selected: Optional[dict[str, str]] = None,
 ) -> dict[str, Any]:
     used_entries = {e.id: e for e in kb_entries}
     provenance_manifest = [
@@ -35,6 +36,7 @@ def build_package(
     return {
         "job_id": job_id,
         "draft": draft.model_dump(mode="json"),
+        "microcopy_selected": microcopy_selected or {},
         "microcopy": {
             field: [c.model_dump(mode="json") for c in cands] for field, cands in microcopy.items()
         },
