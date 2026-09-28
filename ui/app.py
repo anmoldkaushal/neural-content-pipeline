@@ -276,20 +276,30 @@ with tab_kb:
     for e in entries:
         by_status[e.get("status", "pending")] = by_status.get(e.get("status", "pending"), 0) + 1
 
-    cols = st.columns(4)
-    for col, status in zip(cols, ("verified", "pending", "stale", "rejected")):
-        col.metric(status.capitalize(), by_status.get(status, 0))
+    cols = st.columns(5)
+    for col, (status, label) in zip(cols, (("pending", "Needs review"), ("verified", "Verified"),
+                                           ("excluded", "Set aside"), ("stale", "Stale"), ("rejected", "Deleted"))):
+        col.metric(label, by_status.get(status, 0))
 
-    c1, c2 = st.columns([2, 3])
-    show = c1.multiselect("Status", sorted(by_status), default=[x for x in sorted(by_status) if x != "rejected"])
-    query = c2.text_input("Search facts")
+    reviewable = sorted(s_ for s_ in by_status if s_ != "excluded")
+    sources = sorted({e.get("source_doc", "") for e in entries if e.get("status") != "excluded"})
+    c1, c2, c3 = st.columns([2, 2, 3])
+    show = c1.multiselect("Status", reviewable, default=[x for x in reviewable if x != "rejected"])
+    from_docs = c2.multiselect("Source", sources, placeholder="All sources")
+    query = c3.text_input("Search facts")
+    shown = [
+        e for e in entries
+        if e.get("status", "pending") in show
+        and (not from_docs or e.get("source_doc") in from_docs)
+        and query.lower() in e.get("claim", "").lower()
+    ]
+    select_all = st.checkbox(f"Select all {len(shown)} shown", key=f"all-{client_id}")
     rows = [
-        {"select": False, **{k: e.get(k) for k in ("id", "status", "claim", "source_doc", "location", "verified_at", "confirmed_by")}}
-        for e in entries
-        if e.get("status", "pending") in show and query.lower() in e.get("claim", "").lower()
+        {"select": select_all, **{k: e.get(k) for k in ("id", "status", "claim", "source_doc", "location", "verified_at", "confirmed_by")}}
+        for e in shown
     ]
     edited = st.data_editor(
-        rows, width="stretch", hide_index=True, key=f"kb-{client_id}",
+        rows, width="stretch", hide_index=True, key=f"kb-{client_id}-{select_all}",
         disabled=[k for k in (rows[0] if rows else {}) if k != "select"],
         column_config={"select": st.column_config.CheckboxColumn("✓", width="small"),
                        "claim": st.column_config.TextColumn(width="large")},
@@ -307,6 +317,27 @@ with tab_kb:
         st.rerun()
     c3.caption("Enter your name in the sidebar to verify or delete." if no_name else
                "Verified facts are the only ones drafts may use. Deleted facts are kept as 'rejected'.")
+
+    set_aside = [e for e in entries if e.get("status") == "excluded"]
+    if set_aside:
+        with st.expander(f"Set aside, not for copy ({len(set_aside)})"):
+            st.caption("Style rules, audience notes and reference material found in the documents. They never "
+                       "reach a draft and don't need review. Send one back if it's really a claim about the client.")
+            aside_rows = [{"select": False, "id": e["id"], "kind": e.get("kind", ""), "claim": e.get("claim"),
+                           "why": e.get("exclusion_reason") or "", "source_doc": e.get("source_doc")}
+                          for e in sorted(set_aside, key=lambda e: e.get("kind", ""))]
+            aside_edited = st.data_editor(
+                aside_rows, width="stretch", hide_index=True, key=f"aside-{client_id}",
+                disabled=["id", "kind", "claim", "why", "source_doc"],
+                column_config={"select": st.column_config.CheckboxColumn("✓", width="small"),
+                               "claim": st.column_config.TextColumn(width="large"),
+                               "why": st.column_config.TextColumn(width="medium")},
+            )
+            back = [r["id"] for r in aside_edited if r["select"]]
+            if st.button(f"Send back for review ({len(back)})", disabled=not back):
+                kb_verify.restore(client_dir, back)
+                st.session_state["flash"] = f"Sent {len(back)} fact(s) back for review."
+                st.rerun()
 
     with st.expander("Add a fact you know first-hand"):
         with st.form(f"add-fact-{client_id}", clear_on_submit=True):

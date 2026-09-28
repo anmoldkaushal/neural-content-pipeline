@@ -43,8 +43,23 @@ class KBEntry(BaseModel):
     location: Optional[str] = None  # e.g. page number, section heading
     verified_at: Optional[dt.date] = None
     confirmed_by: Optional[str] = None
-    status: str = "pending"  # "pending" | "verified" | "stale" | "rejected"
+    status: str = "pending"  # "pending" | "verified" | "stale" | "rejected" | "excluded"
     superseded_by: Optional[str] = None  # set on an entry once a newer kb-add replaces it
+    # Only "claim" (something about the client's own offering that could appear in copy) is
+    # queued for human review. "style", "audience" and "reference" are kept as excluded context
+    # with a reason; "internal" and "personal" are never stored by kb_compile. See KB_KINDS.
+    kind: str = "claim"
+    exclusion_reason: Optional[str] = None
+
+
+KB_KINDS = {
+    "claim": "about the client's own offering; could appear in copy",
+    "style": "a wording or framing rule: belongs in the style guide or constraints",
+    "audience": "who the client targets: belongs in briefs, not stated as a claim",
+    "reference": "competitor, market or general-knowledge context: never used in client copy",
+    "internal": "project notes, meeting logistics, commercial terms or research metadata",
+    "personal": "about a named private individual (health, finances, quotes): never stored",
+}
 
 
 class IngestedDocument(BaseModel):
