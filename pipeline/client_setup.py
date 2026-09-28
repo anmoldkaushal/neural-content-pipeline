@@ -32,7 +32,8 @@ def init_client(client_id: str, clients_root: Path, from_docs: Optional[Path] = 
 
     client_yaml = target / "client.yaml"
     text = client_yaml.read_text(encoding="utf-8")
-    client_yaml.write_text(text.replace("client_id: TEMPLATE", f"client_id: {client_id}"), encoding="utf-8")
+    # Quoted: an id like 001 or yes would otherwise load back from YAML as a number or boolean.
+    client_yaml.write_text(text.replace("client_id: TEMPLATE", f"client_id: {json.dumps(client_id)}"), encoding="utf-8")
 
     if from_docs is not None:
         draft_profile(target, from_docs)

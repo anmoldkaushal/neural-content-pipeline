@@ -48,3 +48,12 @@ def test_init_client_validates_id_and_set_identity_fills_yaml(tmp_path):
     assert (data["client_id"], data["company_name"], data["industry"]) == ("acme", "Acme Ltd", "Widgets")
     with pytest.raises(FileExistsError):
         client_setup.init_client("acme", tmp_path)
+
+
+def test_numeric_looking_client_id_stays_a_string(tmp_path):
+    from pipeline.run_job import _load_client_profile
+
+    target = client_setup.init_client("001", tmp_path)
+    client_setup.set_identity(target, "Numbered Co", "Retreats")
+    assert yaml.safe_load((target / "client.yaml").read_text())["client_id"] == "001"
+    assert _load_client_profile(target).client_id == "001"

@@ -47,11 +47,13 @@ def _load_client_profile(client_dir: Path) -> ClientProfile:
     )
     constraints_data = constraints_data or {}
 
+    # The folder name is the client id everywhere else (CLI --client, job records); YAML scalars
+    # are coerced to text so an unquoted 001 or 2024 can't fail validation.
     return ClientProfile(
-        client_id=data.get("client_id", client_dir.name),
-        company_name=data.get("company_name", ""),
-        industry=data.get("industry", ""),
-        website=data.get("website"),
+        client_id=client_dir.name,
+        company_name=str(data.get("company_name") or ""),
+        industry=str(data.get("industry") or ""),
+        website=str(data["website"]) if data.get("website") else None,
         synthetic=bool(data.get("synthetic", False)),
         tone_presets=tone_data.get("presets") or [],
         banned_words=data.get("extra_banned_words") or [],
