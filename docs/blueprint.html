@@ -1,0 +1,615 @@
+<title>Content Pipeline Blueprint</title>
+<style>
+  :root{
+    --paper:#F4F2EC;
+    --paper-raised:#FBFAF6;
+    --ink:#1C2430;
+    --ink-soft:#4A5568;
+    --line:#2F3B4C;
+    --rule:#D8D3C6;
+    --accent:#2456C9;
+    --accent-soft:#DCE6FB;
+    --pass:#1F8A5F;
+    --pass-soft:#DFF3EA;
+    --retry:#B5790A;
+    --retry-soft:#FBEED9;
+    --stop:#B23A2E;
+    --stop-soft:#FBE3DF;
+    --manual:#5B4B8A;
+    --manual-soft:#EAE5F5;
+    --grid-line: rgba(47,59,76,0.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      color-scheme:dark;
+      --paper:#12161F; --paper-raised:#181D28; --ink:#E9E6DC; --ink-soft:#A7AEBB; --line:#C7CEDA;
+      --rule:#333B48; --accent:#7DA2FF; --accent-soft:#1C2A4A; --pass:#5FCB98; --pass-soft:#173327;
+      --retry:#E4B15B; --retry-soft:#3A2C10; --stop:#F0897D; --stop-soft:#3B1E1B; --manual:#B7A6F2;
+      --manual-soft:#26203B; --grid-line: rgba(199,206,218,0.06);
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme:dark;
+    --paper:#12161F; --paper-raised:#181D28; --ink:#E9E6DC; --ink-soft:#A7AEBB; --line:#C7CEDA;
+    --rule:#333B48; --accent:#7DA2FF; --accent-soft:#1C2A4A; --pass:#5FCB98; --pass-soft:#173327;
+    --retry:#E4B15B; --retry-soft:#3A2C10; --stop:#F0897D; --stop-soft:#3B1E1B; --manual:#B7A6F2;
+    --manual-soft:#26203B; --grid-line: rgba(199,206,218,0.06);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Public Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+    padding:0 16px;
+    padding-block:28px 64px;
+  }
+  h1,h2,h3{ font-family:"Libre Franklin", -apple-system, sans-serif; color:var(--ink); text-wrap:balance; margin:0; }
+
+  .sheet{
+    position:relative; max-width:760px; margin:0 auto;
+    border:1.5px solid var(--line);
+    background-color:var(--paper-raised);
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size:22px 22px;
+  }
+  .tick{ position:absolute; width:11px; height:11px; border:1.5px solid var(--line); pointer-events:none; }
+  .tick-tl{ top:-1.5px; left:-1.5px; border-right:none; border-bottom:none; }
+  .tick-tr{ top:-1.5px; right:-1.5px; border-left:none; border-bottom:none; }
+  .tick-bl{ bottom:-1.5px; left:-1.5px; border-right:none; border-top:none; }
+  .tick-br{ bottom:-1.5px; right:-1.5px; border-left:none; border-top:none; }
+  .titleblock{
+    display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-end; gap:16px;
+    padding:22px 24px; border-bottom:1.5px solid var(--line);
+  }
+  .titleblock h1{ font-size:clamp(1.5rem,4.5vw,2.1rem); font-weight:800; letter-spacing:-0.01em; }
+  .kicker{
+    font-family:"IBM Plex Mono",monospace; font-size:0.72rem; letter-spacing:0.12em; text-transform:uppercase;
+    color:var(--accent); margin-bottom:6px; display:block;
+  }
+  .meta{ font-family:"IBM Plex Mono",monospace; font-size:0.72rem; color:var(--ink-soft); text-align:right; line-height:1.6; }
+
+  section{ padding:26px 24px; border-bottom:1.5px solid var(--rule); }
+  section:last-of-type{ border-bottom:none; }
+  .lede{ font-size:1.05rem; line-height:1.65; max-width:60ch; color:var(--ink); margin:0; }
+  .lede strong{ color:var(--accent); }
+  h2{ font-size:1.05rem; font-weight:800; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:4px; }
+  .section-sub{ color:var(--ink-soft); font-size:0.9rem; margin:0 0 18px 0; max-width:56ch; line-height:1.55; }
+
+  figure{ margin:0 0 6px 0; overflow-x:auto; }
+  figure svg{ width:100%; height:auto; display:block; color:var(--line); }
+  figcaption{ font-size:0.82rem; color:var(--ink-soft); margin-top:8px; max-width:56ch; line-height:1.55; }
+
+  .legend{
+    display:flex; flex-wrap:wrap; gap:10px 18px; font-size:0.78rem; color:var(--ink-soft);
+    margin:14px 0 0 0; padding:10px 14px; background:var(--paper); border:1px solid var(--rule);
+  }
+  .legend span{ display:inline-flex; align-items:center; gap:6px; }
+  .swatch{ width:16px; height:2px; display:inline-block; }
+
+  .tabs{ display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); border:1px solid var(--rule); background:var(--paper); }
+  .tab{ padding:14px 16px; border-right:1px solid var(--rule); border-bottom:1px solid var(--rule); margin:-1px 0 0 -1px; }
+  .tab .label{
+    font-family:"IBM Plex Mono",monospace; font-size:0.72rem; letter-spacing:0.1em; text-transform:uppercase;
+    color:var(--accent); display:block; margin-bottom:6px;
+  }
+  .tab p{ margin:0; font-size:0.88rem; line-height:1.55; color:var(--ink-soft); }
+
+  .stage-grid{ display:flex; flex-direction:column; margin-top:8px; }
+  .stage{ display:grid; grid-template-columns:34px 1fr; gap:12px; padding:14px 0; border-top:1px solid var(--rule); }
+  .stage:first-child{ border-top:none; }
+  .stage .num{ font-family:"IBM Plex Mono",monospace; font-weight:600; color:var(--accent); font-size:0.85rem; padding-top:2px; }
+  .stage.you .num{ color:var(--manual); }
+  .stage h3{ font-size:0.98rem; font-weight:700; margin-bottom:3px; display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+  .stage p{ font-size:0.88rem; line-height:1.55; color:var(--ink-soft); margin:0; max-width:58ch; }
+  .pill{
+    font-family:"IBM Plex Mono",monospace; font-size:0.66rem; font-weight:500;
+    text-transform:uppercase; letter-spacing:0.08em; padding:2px 8px; border-radius:20px;
+  }
+  .pill.you{ color:var(--manual); background:var(--manual-soft); }
+  .pill.new{ color:var(--accent); background:var(--accent-soft); }
+
+  .callout{ background:var(--pass-soft); border:1px solid var(--pass); padding:16px 18px; font-size:0.92rem; line-height:1.6; color:var(--ink); }
+  .callout strong{ color:var(--pass); }
+
+  .gatelist{ display:flex; flex-direction:column; gap:10px; margin-top:16px; }
+  .gate{ display:grid; grid-template-columns:20px 1fr; gap:10px; align-items:start; font-size:0.88rem; line-height:1.55; color:var(--ink-soft); }
+  .gate .dot{ width:10px; height:10px; border-radius:50%; margin-top:5px; }
+  .gate b{ color:var(--ink); font-weight:700; }
+  .gate-when{
+    font-family:"IBM Plex Mono",monospace; font-size:0.7rem; letter-spacing:0.08em; text-transform:uppercase;
+    color:var(--ink-soft); margin:18px 0 -4px 0;
+  }
+  .gate-when:first-child{ margin-top:0; }
+
+  .kinds{ display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px; margin:0 0 10px 0; }
+  .kind{
+    border:1px solid var(--rule); background:var(--paper); padding:12px 14px;
+    display:flex; flex-direction:column; gap:4px; font-size:0.85rem; line-height:1.5; color:var(--ink-soft);
+  }
+  .kind b{ color:var(--ink); font-size:0.9rem; }
+  .kind.queue{ border-color:var(--pass); background:var(--pass-soft); }
+  .kind.queue b{ color:var(--pass); }
+  .kind.drop{ border-style:dashed; }
+  .kinds-note{ font-size:0.82rem; color:var(--ink-soft); margin:0 0 22px 0; max-width:60ch; line-height:1.55; }
+
+  .added-list{ display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; }
+  .added-card{ border:1.5px solid var(--manual); padding:16px 18px; background:var(--manual-soft); display:flex; flex-direction:column; gap:8px; }
+  .added-card h3{ font-size:0.95rem; color:var(--manual); }
+  .added-card p{ font-size:0.88rem; line-height:1.6; color:var(--ink-soft); margin:0; }
+  .added-card .pill{ align-self:flex-start; background:var(--paper-raised); color:var(--manual); }
+  .added-card.fix{ border-color:var(--retry); background:var(--retry-soft); }
+  .added-card.fix h3, .added-card.fix .pill{ color:var(--retry); }
+  .earlier{ font-size:0.82rem; color:var(--ink-soft); margin:16px 0 0 0; max-width:60ch; line-height:1.55; }
+
+  .foot{
+    padding:18px 24px; font-size:0.75rem; color:var(--ink-soft); font-family:"IBM Plex Mono",monospace;
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; border-top:1.5px solid var(--rule);
+  }
+
+  @media (max-width:480px){
+    .titleblock{ flex-direction:column; align-items:flex-start; }
+    .meta{ text-align:left; }
+    section{ padding:22px 16px; }
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<div class="sheet">
+  <span class="tick tick-tl"></span><span class="tick tick-tr"></span>
+  <span class="tick tick-bl"></span><span class="tick tick-br"></span>
+
+  <div class="titleblock">
+    <div>
+      <span class="kicker">Neural Content Pipeline &middot; System Overview</span>
+      <h1>How a piece of client copy gets made</h1>
+    </div>
+    <div class="meta">
+      Sheet 1 of 1 &middot; Rev. 3 (V2)<br>
+      Updated 2026-09-28<br>
+      For: non-technical review
+    </div>
+  </div>
+
+  <section>
+    <p class="lede">
+      This is a production line for writing outreach copy, such as cold emails, LinkedIn messages and
+      landing pages, for one client at a time. You work it from a small app on your computer: pick a
+      client, say what the piece should do, and <strong>choose the direction and the short copy yourself</strong>
+      before anything expensive is written. Then an independent set of checks has to pass the draft before
+      you see it. If a check fails, the system rewrites and tries again, or stops and says exactly why. It
+      never quietly ships something that failed a check.
+    </p>
+  </section>
+
+  <section>
+    <h2>Where you use it</h2>
+    <p class="section-sub">One local app with four tabs. It runs on your own machine, with the client picked
+      in the sidebar.</p>
+    <div class="tabs">
+      <div class="tab">
+        <span class="label">Generate</span>
+        <p>Write the prompt, pick the content type and tone, choose an angle, then choose the short copy.
+          The finished piece appears with copy buttons and a PDF download.</p>
+      </div>
+      <div class="tab">
+        <span class="label">Knowledge base</span>
+        <p>See what needs review, verify or delete facts in bulk, add a fact you learned first-hand, or
+          upload new documents. Material that isn't a claim about the client is set aside with a reason.</p>
+      </div>
+      <div class="tab">
+        <span class="label">Jobs</span>
+        <p>Every piece run for this client: how many finished, how many passed first time, and which check
+          sends drafts back most often. Open any past job to read or download it.</p>
+      </div>
+      <div class="tab">
+        <span class="label">New client</span>
+        <p>Name the client, upload their documents, and the system drafts a style guide, tones and
+          banned-word lists (marked DRAFT for you to review) and extracts their facts.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The main line</h2>
+    <p class="section-sub">A brief goes in at the top. Finished copy comes out at the bottom. The two purple
+      steps in the middle are yours; everything else runs by itself unless something needs a human.</p>
+
+    <figure>
+      <svg viewBox="0 0 420 1185" role="img" aria-label="Flow diagram. A brief from the app passes a readiness check, which can stop the job. The system drafts 2 to 3 angles and you pick one. It then generates a micro-copy menu fitted to the content type, and you pick or write the copy. The picked copy is checked; if it breaks a rule the job stops for you to pick again. The brief is compiled into a writer's spec, the draft is written, and five independent checks run, with up to two automatic rewrites before the job stops and names the failing check. The result is packaged, shown in the app with copy buttons and a PDF, and a human can approve it so future jobs use it as a voice example.">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/>
+          </marker>
+        </defs>
+        <g stroke="currentColor" fill="none" font-family="IBM Plex Mono, monospace">
+          <rect x="50" y="10" width="240" height="66" rx="3" stroke-width="1.6"/>
+          <text x="170" y="28" text-anchor="middle" font-size="10" letter-spacing="1" fill="currentColor" stroke="none">IN</text>
+          <text x="170" y="45" text-anchor="middle" font-size="12.5" fill="currentColor" stroke="none">A brief, from the app</text>
+          <text x="170" y="62" text-anchor="middle" font-size="9.5" fill="currentColor" stroke="none" opacity="0.75">client &middot; content type &middot; prompt &middot; tone</text>
+          <line x1="170" y1="76" x2="170" y2="100" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+          <rect x="50" y="100" width="240" height="54" rx="3" stroke-width="1.6"/>
+          <text x="170" y="122" text-anchor="middle" font-size="12.5" fill="currentColor" stroke="none">Ready to start?</text>
+          <text x="170" y="140" text-anchor="middle" font-size="10.5" fill="currentColor" stroke="none" opacity="0.75">facts confirmed + sourced?</text>
+          <path d="M290,127 H350 V160" stroke-width="1.4" stroke="var(--stop)" marker-end="url(#arrow)"/>
+          <text x="318" y="121" font-size="9.5" fill="var(--stop)" stroke="none">no</text>
+          <rect x="305" y="160" width="90" height="44" rx="3" stroke-width="1.4" stroke="var(--stop)"/>
+          <text x="350" y="178" text-anchor="middle" font-size="9.5" fill="var(--stop)" stroke="none" letter-spacing="0.5">STOP</text>
+          <text x="350" y="193" text-anchor="middle" font-size="8.8" fill="var(--stop)" stroke="none">hand to a human</text>
+          <text x="148" y="173" font-size="9.5" fill="var(--pass)" stroke="none">yes</text>
+          <line x1="170" y1="154" x2="170" y2="184" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+          <rect x="50" y="184" width="240" height="40" rx="3" stroke-width="1.6"/>
+          <text x="170" y="209" text-anchor="middle" font-size="11.5" fill="currentColor" stroke="none">2&ndash;3 angle options drafted</text>
+          <line x1="170" y1="224" x2="170" y2="248" stroke-width="1.6" stroke="var(--manual)" marker-end="url(#arrow)"/>
+
+          <rect x="50" y="248" width="240" height="40" rx="3" stroke-width="1.6" stroke="var(--manual)"/>
+          <text x="170" y="273" text-anchor="middle" font-size="11.5" fill="var(--manual)" stroke="none">You pick the angle</text>
+          <line x1="170" y1="288" x2="170" y2="312" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+          <rect x="50" y="312" width="240" height="58" rx="3" stroke-width="1.6"/>
+          <text x="170" y="332" text-anchor="middle" font-size="12.5" fill="currentColor" stroke="none">Micro-copy menu</text>
+          <text x="170" y="348" text-anchor="middle" font-size="10" fill="currentColor" stroke="none" opacity="0.75">fields fit the content type</text>
+          <text x="170" y="362" text-anchor="middle" font-size="9.5" fill="currentColor" stroke="none" opacity="0.6">options that break a rule are flagged</text>
+          <line x1="170" y1="370" x2="170" y2="394" stroke-width="1.6" stroke="var(--manual)" marker-end="url(#arrow)"/>
+
+          <rect x="50" y="394" width="240" height="40" rx="3" stroke-width="1.6" stroke="var(--manual)"/>
+          <text x="170" y="419" text-anchor="middle" font-size="11.5" fill="var(--manual)" stroke="none">You pick or write the copy</text>
+          <line x1="170" y1="434" x2="170" y2="458" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+          <rect x="50" y="458" width="240" height="44" rx="3" stroke-width="1.6" stroke="var(--accent)"/>
+          <text x="170" y="477" text-anchor="middle" font-size="12" fill="currentColor" stroke="none">Check the picked copy</text>
+          <text x="170" y="493" text-anchor="middle" font-size="10" fill="currentColor" stroke="none" opacity="0.75">same word rules as the body</text>
+          <path d="M290,480 H350 V510" stroke-width="1.4" stroke="var(--stop)" marker-end="url(#arrow)"/>
+          <text x="314" y="474" font-size="9.5" fill="var(--stop)" stroke="none">fails</text>
+          <rect x="305" y="510" width="90" height="44" rx="3" stroke-width="1.4" stroke="var(--stop)"/>
+          <text x="350" y="528" text-anchor="middle" font-size="9.5" fill="var(--stop)" stroke="none" letter-spacing="0.5">STOP</text>
+          <text x="350" y="543" text-anchor="middle" font-size="8.8" fill="var(--stop)" stroke="none">pick again</text>
+          <line x1="170" y1="502" x2="170" y2="526" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+          <rect x="50" y="526" width="240" height="40" rx="3" stroke-width="1.6"/>
+          <text x="170" y="551" text-anchor="middle" font-size="11.5" fill="currentColor" stroke="none">Compiled into one writer's spec</text>
+          <line x1="170" y1="566" x2="170" y2="590" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+          <rect x="50" y="590" width="240" height="50" rx="3" stroke-width="1.6"/>
+          <text x="170" y="611" text-anchor="middle" font-size="12.5" fill="currentColor" stroke="none">Write the draft</text>
+          <text x="170" y="627" text-anchor="middle" font-size="10" fill="currentColor" stroke="none" opacity="0.75">+ a quick self-check</text>
+          <line x1="170" y1="640" x2="170" y2="664" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+          <rect x="40" y="664" width="260" height="250" rx="3" stroke-width="1.6" stroke="var(--accent)"/>
+          <text x="170" y="686" text-anchor="middle" font-size="9" letter-spacing="1" fill="var(--accent)" stroke="none">5 CHECKS ON THE DRAFT, ALL MUST PASS</text>
+          <g font-size="11" fill="currentColor" stroke="none">
+            <rect x="60" y="698" width="220" height="30" rx="3" stroke="currentColor" stroke-width="1" fill="none"/>
+            <text x="170" y="717" text-anchor="middle">1 &middot; Format &amp; wording</text>
+            <rect x="60" y="736" width="220" height="30" rx="3" stroke="currentColor" stroke-width="1" fill="none"/>
+            <text x="170" y="755" text-anchor="middle">2 &middot; Client's banned words</text>
+            <rect x="60" y="774" width="220" height="30" rx="3" stroke="currentColor" stroke-width="1" fill="none"/>
+            <text x="170" y="793" text-anchor="middle">3 &middot; Client's banned framing</text>
+            <rect x="60" y="812" width="220" height="30" rx="3" stroke="currentColor" stroke-width="1" fill="none"/>
+            <text x="170" y="831" text-anchor="middle">4 &middot; Every fact is sourced</text>
+            <rect x="60" y="850" width="220" height="30" rx="3" stroke="currentColor" stroke-width="1" fill="none"/>
+            <text x="170" y="869" text-anchor="middle">5 &middot; On-brand, in the chosen tone</text>
+          </g>
+          <text x="170" y="902" text-anchor="middle" font-size="10.5" fill="var(--pass)" stroke="none">all 5 pass</text>
+
+          <path d="M300,790 C352,790 352,615 290,615" stroke-width="1.4" stroke="var(--retry)" marker-end="url(#arrow)"/>
+          <text x="364" y="702" text-anchor="middle" font-size="9.5" fill="var(--retry)" stroke="none" transform="rotate(90 364 702)">fails: rewrite, try again (&times;2)</text>
+
+          <path d="M300,885 C340,885 350,900 350,930" stroke-width="1.4" stroke="var(--stop)" marker-end="url(#arrow)"/>
+          <text x="340" y="880" font-size="9" fill="var(--stop)" stroke="none">3rd fail</text>
+          <rect x="305" y="930" width="90" height="44" rx="3" stroke-width="1.4" stroke="var(--stop)"/>
+          <text x="350" y="948" text-anchor="middle" font-size="9.5" fill="var(--stop)" stroke="none" letter-spacing="0.5">STOP</text>
+          <text x="350" y="963" text-anchor="middle" font-size="8.8" fill="var(--stop)" stroke="none">name the check</text>
+          <line x1="170" y1="914" x2="170" y2="938" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+          <rect x="50" y="938" width="240" height="50" rx="3" stroke-width="1.6"/>
+          <text x="170" y="959" text-anchor="middle" font-size="12.5" fill="currentColor" stroke="none">Package it up</text>
+          <text x="170" y="975" text-anchor="middle" font-size="9.5" fill="currentColor" stroke="none" opacity="0.75">picked copy + draft + compliance report</text>
+          <line x1="170" y1="988" x2="170" y2="1012" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+          <rect x="50" y="1012" width="240" height="58" rx="3" stroke-width="1.8" stroke="var(--pass)"/>
+          <text x="170" y="1030" text-anchor="middle" font-size="10" letter-spacing="1" fill="var(--pass)" stroke="none">OUT</text>
+          <text x="170" y="1046" text-anchor="middle" font-size="12" fill="var(--pass)" stroke="none">Shown in the app, ready to copy</text>
+          <text x="170" y="1061" text-anchor="middle" font-size="10" fill="var(--pass)" stroke="none" opacity="0.85">+ a downloadable PDF</text>
+          <line x1="170" y1="1070" x2="170" y2="1100" stroke-width="1.6" stroke="var(--manual)" marker-end="url(#arrow)"/>
+          <text x="180" y="1090" font-size="9.5" fill="var(--manual)" stroke="none">a human reads it</text>
+
+          <rect x="50" y="1100" width="240" height="52" rx="3" stroke-width="1.6" stroke="var(--manual)"/>
+          <text x="170" y="1120" text-anchor="middle" font-size="9" letter-spacing="1" fill="var(--manual)" stroke="none">HUMAN RUNS THIS</text>
+          <text x="170" y="1138" text-anchor="middle" font-size="11" fill="var(--manual)" stroke="none">Approve &amp; remember</text>
+          <path d="M290,1126 H408 V212 H292" stroke-width="1.3" stroke="var(--manual)" marker-end="url(#arrow)"/>
+          <text x="170" y="1172" text-anchor="middle" font-size="9" fill="var(--manual)" stroke="none">future jobs of this client + format see it as a voice example</text>
+        </g>
+      </svg>
+      <figcaption>
+        The line down the middle runs by itself except for the two purple steps, which are your choices in
+        the app. The amber loop is an automatic rewrite, up to two tries per check. The three red boxes are
+        the only places the system stops and waits for a person. Approving a finished piece (bottom) is a
+        deliberate human step that teaches future jobs the client's voice.
+      </figcaption>
+    </figure>
+
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--line)"></span> automatic step</span>
+      <span><span class="swatch" style="background:var(--manual)"></span> your choice or deliberate step</span>
+      <span><span class="swatch" style="background:var(--retry)"></span> automatic retry</span>
+      <span><span class="swatch" style="background:var(--stop)"></span> stops for a human</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Stage by stage, in plain words</h2>
+    <p class="section-sub">In the order a piece of copy moves through them. Purple numbers are the steps
+      where a person decides.</p>
+
+    <div class="stage-grid">
+      <div class="stage you">
+        <div class="num">01</div>
+        <div>
+          <h3>Write the brief <span class="pill new">New in V2</span></h3>
+          <p>Pick the client and content type, then type what the piece should do. The audience, length and
+            must-follow notes are filled in from the last brief of that type for this client, and you can
+            edit any of them. The tone is chosen here too.</p>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="num">02</div>
+        <div>
+          <h3>Readiness check</h3>
+          <p>Before spending any effort, the system checks the client's facts are confirmed, sourced and
+            dated, and that the brief has enough to work with. If not, it stops immediately instead of
+            guessing.</p>
+        </div>
+      </div>
+      <div class="stage you">
+        <div class="num">03</div>
+        <div>
+          <h3>Angle menu <span class="pill you">You choose</span></h3>
+          <p>Drafts 2&ndash;3 cheap, genuinely different directions for the piece. You pick one before any
+            full draft is written, so a weak direction never costs a full draft.</p>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="num">04</div>
+        <div>
+          <h3>Tone</h3>
+          <p>Usually one of the client's approved tones. You can also describe a new tone for this one piece,
+            or ask the system to suggest one. A new tone is recorded on the job as a one-off and becomes a
+            preset only if you save it.</p>
+        </div>
+      </div>
+      <div class="stage you">
+        <div class="num">05</div>
+        <div>
+          <h3>Micro-copy menu <span class="pill you">You choose</span></h3>
+          <p>Several options for each short piece of copy the content type needs: subject line, preheader
+            and call to action for an email; opener and call to action for a LinkedIn message; title,
+            subtitle, hook and call to action for a blog post. Any option that would break a word rule is
+            flagged. Pick one per field or write your own.</p>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="num">06</div>
+        <div>
+          <h3>Check the picked copy <span class="pill new">New in V2</span></h3>
+          <p>Your picks go through the same banned-word and banned-term rules as the body. If one fails, the
+            job stops before drafting, because rewriting the body can't fix a subject line.</p>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="num">07</div>
+        <div>
+          <h3>Write the draft</h3>
+          <p>The brief, angle, tone, your notes and the picked copy are compiled into one spec. Then the one
+            expensive writing pass runs, using only the client's confirmed facts.</p>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="num">08</div>
+        <div>
+          <h3>Five checks, run independently</h3>
+          <p>Explained in the next section. This is the part that keeps the system honest.</p>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="num">09</div>
+        <div>
+          <h3>Package &amp; show</h3>
+          <p>Bundles the picked copy, the draft, the other options and a compliance report. The app shows
+            each piece of text with a copy button, the result of every check, and a PDF to download.</p>
+        </div>
+      </div>
+      <div class="stage you">
+        <div class="num">10</div>
+        <div>
+          <h3>Approve <span class="pill you">Human step</span></h3>
+          <p>A person reads the result and, if it's good, approves it. That closes the job and keeps the draft
+            as a confirmed example of this client's voice for this exact format.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The checks, in detail</h2>
+    <p class="section-sub">Nothing reaches you until it has passed every check. A check that can't run
+      reports itself as <em>skipped</em>, never as a false pass.</p>
+
+    <div class="gatelist">
+      <div class="gate-when">Before drafting</div>
+      <div class="gate"><span class="dot" style="background:var(--ink-soft)"></span>
+        <div><b>Picked copy</b>: the subject lines, openers and calls to action you chose, against the house
+          banned-word list, stray dashes and this client's banned terms. Plain rules, zero tolerance.</div></div>
+
+      <div class="gate-when">On the draft</div>
+      <div class="gate"><span class="dot" style="background:var(--ink-soft)"></span>
+        <div><b>Format &amp; wording</b>: no banned words, no stray punctuation marks, the right length.
+          Plain rules, zero tolerance.</div></div>
+      <div class="gate"><span class="dot" style="background:var(--ink-soft)"></span>
+        <div><b>This client's banned words</b>: specific terms this client never wants used, such as a
+          competitor's name or an overclaim.</div></div>
+      <div class="gate"><span class="dot" style="background:var(--accent)"></span>
+        <div><b>This client's banned framing</b>: an independent AI reviewer checks for lines that can't be
+          reduced to one banned word: fake urgency, appealing to the wrong audience, stating an unconfirmed
+          detail as final. It now reads the draft with your picked copy on top, the way a reader meets it.</div></div>
+      <div class="gate"><span class="dot" style="background:var(--ink-soft)"></span>
+        <div><b>Every fact is sourced</b>: any number or claim in the draft must trace back to a fact that
+          was already confirmed and dated. Nothing is invented on the spot.</div></div>
+      <div class="gate"><span class="dot" style="background:var(--accent)"></span>
+        <div><b>On-brand, in the chosen tone</b>: a second independent AI reviewer reads the draft cold and
+          flags generic phrasing or clich&eacute;s. It now judges against the tone you chose for this piece,
+          including a one-off tone, and also sees the picked copy.</div></div>
+    </div>
+
+    <div style="height:16px"></div>
+
+    <div class="callout">
+      <strong>If a draft check fails,</strong> the draft goes back for a rewrite that is told exactly what to
+      fix, up to two tries per check. If it fails a third time, the system stops and shows you the draft and
+      the exact reason. If the picked copy fails, nothing is drafted: you pick different copy and run again.
+    </div>
+  </section>
+
+  <section>
+    <h2>Where the facts come from</h2>
+    <p class="section-sub">Each client has a knowledge base that feeds the "every fact is sourced" check.
+      All of it can now be managed from the Knowledge base tab.</p>
+
+    <div class="kinds">
+      <div class="kind queue"><b>Claims about the client</b><span>The founder, the format, dates, prices,
+        results. The only kind that goes to a person for review.</span></div>
+      <div class="kind"><b>Wording rules</b><span>"Say this, not that." Set aside as a suggestion for the
+        style guide or banned-word list.</span></div>
+      <div class="kind"><b>Audience</b><span>Who the client sells to. Set aside for briefs; never stated as
+        a claim.</span></div>
+      <div class="kind"><b>Reference</b><span>Competitors, market data, general knowledge. Set aside and
+        never used in client copy.</span></div>
+      <div class="kind drop"><b>Not stored</b><span>Meeting notes and action items, and anything personal
+        about a named private individual.</span></div>
+    </div>
+    <p class="kinds-note">When documents are read, every statement is labelled one of the above. Set-aside
+      items stay on file with the reason shown, and can be sent back for review.</p>
+
+    <figure>
+      <svg viewBox="0 0 420 330" role="img" aria-label="Flow diagram: source documents are read by AI into pending facts, a human confirms them into verified facts, and only verified facts are usable in a draft; unconfirmed facts are blocked. A human can confirm a fact directly without a document, or mark an old fact stale by superseding it. A human can also delete a fact, which keeps it as rejected so it is never re-added.">
+        <defs>
+          <marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/>
+          </marker>
+        </defs>
+        <g stroke="currentColor" fill="none" font-family="IBM Plex Mono, monospace" font-size="11">
+          <rect x="10" y="16" width="120" height="44" rx="3" stroke-width="1.4"/>
+          <text x="70" y="34" text-anchor="middle" stroke="none" fill="currentColor">Source docs</text>
+          <text x="70" y="48" text-anchor="middle" stroke="none" fill="currentColor" opacity="0.7" font-size="9">PDFs, notes, decks</text>
+          <line x1="130" y1="38" x2="168" y2="38" stroke-width="1.4" marker-end="url(#arrow2)"/>
+          <text x="149" y="30" text-anchor="middle" stroke="none" fill="currentColor" font-size="8.5" opacity="0.7">read by AI</text>
+
+          <rect x="168" y="16" width="120" height="44" rx="3" stroke-width="1.4" stroke="var(--retry)"/>
+          <text x="228" y="34" text-anchor="middle" stroke="none" fill="var(--retry)">Pending claim</text>
+          <text x="228" y="48" text-anchor="middle" stroke="none" fill="var(--retry)" opacity="0.8" font-size="9">not usable yet</text>
+          <line x1="288" y1="38" x2="326" y2="38" stroke-width="1.4" marker-end="url(#arrow2)"/>
+          <text x="307" y="30" text-anchor="middle" stroke="none" fill="currentColor" font-size="8.5" opacity="0.7">you verify</text>
+
+          <rect x="326" y="16" width="84" height="44" rx="3" stroke-width="1.6" stroke="var(--pass)"/>
+          <text x="368" y="34" text-anchor="middle" stroke="none" fill="var(--pass)">Verified</text>
+          <text x="368" y="48" text-anchor="middle" stroke="none" fill="var(--pass)" opacity="0.85" font-size="9">sourced + dated</text>
+          <line x1="368" y1="60" x2="368" y2="100" stroke-width="1.4" marker-end="url(#arrow2)"/>
+          <rect x="310" y="100" width="100" height="40" rx="3" stroke-width="1.4"/>
+          <text x="360" y="124" text-anchor="middle" stroke="none" fill="currentColor" font-size="10">usable in a draft</text>
+
+          <line x1="228" y1="60" x2="228" y2="100" stroke-width="1.4" stroke="var(--stop)" marker-end="url(#arrow2)"/>
+          <rect x="160" y="100" width="136" height="40" rx="3" stroke-width="1.4" stroke="var(--stop)"/>
+          <text x="228" y="124" text-anchor="middle" stroke="none" fill="var(--stop)" font-size="10">blocked from a draft</text>
+
+          <rect x="10" y="196" width="180" height="46" rx="3" stroke-width="1.4" stroke="var(--manual)"/>
+          <text x="100" y="216" text-anchor="middle" stroke="none" fill="var(--manual)">You confirm directly</text>
+          <text x="100" y="230" text-anchor="middle" stroke="none" fill="var(--manual)" opacity="0.85" font-size="9">no document needed</text>
+          <path d="M95,196 C95,160 140,150 150,120 C156,90 300,70 330,60" stroke-width="1.3" stroke="var(--manual)" marker-end="url(#arrow2)"/>
+
+          <rect x="250" y="196" width="160" height="46" rx="3" stroke-width="1.4" stroke="var(--manual)" stroke-dasharray="3 3"/>
+          <text x="330" y="216" text-anchor="middle" stroke="none" fill="var(--manual)">Stale (retired)</text>
+          <text x="330" y="230" text-anchor="middle" stroke="none" fill="var(--manual)" opacity="0.85" font-size="9">e.g. an old price</text>
+          <path d="M395,60 C400,120 380,160 360,196" stroke-width="1.3" stroke="var(--manual)" marker-end="url(#arrow2)"/>
+          <text x="404" y="184" text-anchor="end" stroke="none" font-size="8.5" fill="var(--manual)" opacity="0.9">superseded</text>
+
+          <line x1="228" y1="140" x2="228" y2="270" stroke-width="1.4" stroke="var(--stop)" stroke-dasharray="4 3" marker-end="url(#arrow2)"/>
+          <text x="234" y="262" stroke="none" font-size="8.5" fill="var(--stop)">you delete it</text>
+          <rect x="150" y="270" width="156" height="46" rx="3" stroke-width="1.4" stroke="var(--stop)" stroke-dasharray="3 3"/>
+          <text x="228" y="290" text-anchor="middle" stroke="none" fill="var(--stop)">Deleted</text>
+          <text x="228" y="304" text-anchor="middle" stroke="none" fill="var(--stop)" opacity="0.85" font-size="9">kept, so never re-added</text>
+        </g>
+      </svg>
+      <figcaption>
+        A claim becomes usable only once a person confirms it. In the Knowledge base tab you can verify or
+        delete claims in bulk, add one you learned on a call, and upload new documents. A deleted claim is
+        kept on file as rejected, so re-reading the same documents never proposes it again. Deleting a claim
+        that was verified also withdraws its confirmation.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>What changed in V2</h2>
+    <p class="section-sub">Built and tested 2026-09-28, with automated tests covering the full three-step
+      flow.</p>
+
+    <div class="added-list">
+      <div class="added-card">
+        <span class="pill">Added</span>
+        <h3>A local app instead of the command line</h3>
+        <p>Generate, read and copy content, browse each client's knowledge base and job history, and set up
+          new clients, all from one page on your own machine.</p>
+      </div>
+      <div class="added-card">
+        <span class="pill">Added</span>
+        <h3>You choose before the expensive part</h3>
+        <p>The run now pauses twice: once to pick the angle, once to pick the short copy. Both happen before
+          the draft is written, so a wrong direction costs a few cheap calls instead of a full draft.</p>
+      </div>
+      <div class="added-card">
+        <span class="pill">Added</span>
+        <h3>Short copy that fits the format, and gets checked</h3>
+        <p>Before, every piece got titles, subtitles, hooks and calls to action, and none of it was checked.
+          Now each content type gets its own fields, and the copy you pick is held to the same rules as the
+          body.</p>
+      </div>
+      <div class="added-card">
+        <span class="pill">Added</span>
+        <h3>Tones beyond the presets</h3>
+        <p>Describe a new tone or ask for a suggestion. The voice check judges the draft against that tone,
+          and you can save it as a preset for next time.</p>
+      </div>
+      <div class="added-card">
+        <span class="pill">Added</span>
+        <h3>Job history with success rates</h3>
+        <p>Each job now records the angle, tone and copy chosen. The Jobs tab shows how many finished, how
+          many passed first time, and which check causes most rewrites.</p>
+      </div>
+      <div class="added-card">
+        <span class="pill">Added</span>
+        <h3>A review queue that only holds real claims</h3>
+        <p>Reading documents used to queue everything checkable for review, including meeting notes and
+          competitor research. Now only claims about the client are queued; the rest is set aside with a
+          reason, and personal details are never kept. The first clean-up cut the queues by more than half.</p>
+      </div>
+      <div class="added-card fix">
+        <span class="pill">Fixed</span>
+        <h3>Your brief notes now reach the writer</h3>
+        <p>Instructions written in a brief's notes were never passed to the writing steps, so a rule like
+          "no em dashes" could be ignored. They now reach the angle, spec, draft and micro-copy prompts.</p>
+      </div>
+    </div>
+
+    <p class="earlier">Rev. 2 additions (confirming a fact directly, and learning from approved work) are
+      folded into the sections above.</p>
+  </section>
+
+  <div class="foot">
+    <span>neural-content-pipeline</span>
+    <span>brief &rarr; your choices &rarr; checked draft &rarr; copy or PDF</span>
+  </div>
+</div>
