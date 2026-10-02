@@ -41,7 +41,7 @@ The orchestrator runs in three phases (`start` -> `build_microcopy_menu` -> `exe
 `streamlit run ui/app.py`: pick a client, content type, prompt + pre-filled modifiers and a tone;
 choose an angle, then the micro-copy; read, copy or download (PDF) the result. Knowledge base
 verifies, deletes (as `rejected`) and adds facts, and compiles uploaded documents; Jobs shows
-history with completion and first-pass rates and retries per gate; New client scaffolds a client.
+history with completion and first-pass rates and retries per gate, and resumes a job left mid-way; New client scaffolds a client.
 
 ## Deferred (and why)
 

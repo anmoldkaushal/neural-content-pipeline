@@ -105,3 +105,13 @@ def test_exclude_restore_and_purge(tmp_path):
     assert kb_verify.purge(client_dir, ["kb-0", "kb-2"]) == 2
     assert set(_statuses(client_dir)) == {"kb-1"}
     assert json.loads((client_dir / "provenance.json").read_text()) == []
+
+
+def test_restore_brings_a_deleted_fact_back_unverified(tmp_path):
+    client_dir = _client(tmp_path)
+    kb_verify.approve(client_dir, ["kb-0"], "reviewer")
+    kb_verify.reject(client_dir, ["kb-0"], "reviewer")
+
+    kb_verify.restore(client_dir, ["kb-0"])
+    assert _statuses(client_dir)["kb-0"] == "pending"
+    assert json.loads((client_dir / "provenance.json").read_text()) == []

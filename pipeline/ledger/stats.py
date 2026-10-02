@@ -26,10 +26,14 @@ def load_records(output_root: Path, client_id: Optional[str] = None) -> tuple[li
     return records, unreadable
 
 
+COMPLETE_STATUSES = ("complete", "complete_manual_edit")
+
+
 def summarize(records: list[JobRecord]) -> dict[str, Any]:
     # Jobs still waiting on a menu choice haven't been attempted yet; they don't count toward rates.
     attempted = [r for r in records if r.status != "awaiting_selection"]
-    complete = [r for r in attempted if r.status == "complete"]
+    # "complete_manual_edit" is a package a human finished by hand: delivered, so it counts.
+    complete = [r for r in attempted if r.status in COMPLETE_STATUSES]
     first_pass = [r for r in complete if not r.retry_count]
 
     retries_by_gate: Counter[str] = Counter()

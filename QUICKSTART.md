@@ -59,12 +59,12 @@ streamlit run ui/app.py
 must-follow notes are pre-filled from that client's last brief of the same type in
 `local_briefs/<client>/`), pick a tone preset or a custom one. Then choose an angle, then the
 micro-copy (options marked ⚠ would fail the micro-copy gate). The result shows with copy buttons
-and a PDF download. **Knowledge base**: tick facts and Verify or Delete them (enter your name in
-the sidebar first; it is recorded as `confirmed_by`), add a fact you know first-hand, or upload
+and a PDF download; "Reuse this brief" refills the form for another run. **Knowledge base**: tick facts and Verify or Delete them (enter your name in
+the sidebar first; it is recorded as `confirmed_by`; a deleted fact can be sent back to review), add a fact you know first-hand, or upload
 documents and compile. Deleted facts are kept as `rejected`, so a later compile won't propose
 them again. Compiling labels every extracted statement; only claims about the client
 enter the review queue. Style rules, audience notes and reference material are set aside with a
-reason (restorable from the tab), and meeting notes or personal details are never stored. **Jobs**: history and success rates per client. **New client**: the same steps as the
+reason (restorable from the tab), and meeting notes or personal details are never stored. **Jobs**: history and success rates per client; click a row to open a job, or resume one left at the angle or micro-copy step. **New client**: the same steps as the
 CLI below (scaffold, draft profile from documents, compile), then review in Knowledge base.
 
 ## Picking an angle or tone from the CLI

@@ -107,6 +107,7 @@ def start(
     output_root: Path,
     transport: Optional[ClaudeTransport] = None,
     brief_summary: Optional[str] = None,
+    tone: Optional[ToneChoice] = None,
 ) -> JobSession:
     job_id = uuid.uuid4().hex[:10]
     client_dir = clients_root / client_id
@@ -140,7 +141,8 @@ def start(
         _block(output_dir, record, "awaiting_human", ["angle generation unavailable or returned no candidates"])
         raise JobBlocked("no angle candidates available")
 
-    session = JobSession(job_id=job_id, client_id=client_id, brief=brief, angles=angles)
+    # tone is optional here (build_microcopy_menu sets it); storing it early lets a UI resume the job
+    session = JobSession(job_id=job_id, client_id=client_id, brief=brief, angles=angles, tone=tone)
     _save_session(output_root, session)
     record.status = "awaiting_selection"
     job_record.save(output_dir, record)
