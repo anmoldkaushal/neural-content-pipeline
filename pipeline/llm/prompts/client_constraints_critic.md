@@ -7,5 +7,5 @@ paraphrase, by implication, or by structure. Check the draft's actual meaning ag
 
 Respond as a single JSON object: {"verdict": "clean", "notes": []}
 (verdict is "clean" or "violation"; if "violation", notes should be empty in the clean case,
-otherwise short and specific -- name the exact sentence and which rule it breaks, not a vague
+otherwise short and specific -- name the exact sentence, which rule it breaks and what would fix it, not a vague
 impression).

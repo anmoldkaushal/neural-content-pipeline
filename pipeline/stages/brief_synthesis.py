@@ -1,5 +1,6 @@
-"""Compiles brief + chosen angle + chosen tone + verified KB into one working spec the drafter
-follows. Keeps the drafter's context targeted instead of four raw input documents glommed together."""
+"""Compiles brief + chosen angle + chosen tone + verified KB (+ the content plan item and relevant
+client context, when there are any) into one working spec the drafter follows. Keeps the drafter's
+context targeted instead of raw input documents glommed together."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -17,6 +18,8 @@ def synthesize(
     tone: ToneChoice,
     kb_entries: list[KBEntry],
     transport: Optional[ClaudeTransport] = None,
+    plan_block: str = "",
+    context_block: str = "",
 ) -> dict[str, Any]:
     transport = transport or ClaudeTransport()
     verified_by_id = {e.id: e for e in kb_entries if e.status == "verified"}
@@ -25,14 +28,16 @@ def synthesize(
     )
 
     notes_line = f"Must follow: {brief.notes}\n" if brief.notes else ""
+    length = brief.word_range.label() if brief.word_range else "unspecified"
 
     template = _PROMPT_PATH.read_text(encoding="utf-8")
     prompt = (
         f"{template}\n\nBrief: {brief.goal} (audience: {brief.audience}, format: {brief.format}, "
-        f"target words: {brief.target_word_count or 'unspecified'})\n"
-        f"{notes_line}\n"
+        f"length: {length})\n"
+        f"{notes_line}{plan_block}\n"
         f"Chosen angle: {angle.headline} — {angle.pitch}\nStructure: {angle.structure}\n\n"
         f"Chosen tone: {tone.preset_name} — {tone.resolved_style_checklist.get('tone_description')}\n\n"
+        f"{context_block}\n"
         f"Facts available:\n{facts_block or '(none)'}"
     )
 
@@ -42,7 +47,7 @@ def synthesize(
         # whether to escalate; the pass-through claims_used makes downstream failures explicit.
         return {
             "outline": angle.structure,
-            "style_checklist": {"tone": tone.preset_name},
+            "style_checklist": {"tone": tone.preset_name, "word_range": length},
             "claims_to_use": angle.claims_used,
             "synthesis_unavailable": True,
         }

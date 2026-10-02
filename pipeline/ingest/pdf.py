@@ -48,6 +48,7 @@ def ingest(path: Path, doc_id: str) -> IngestedDocument:
             extraction_method="text_layer",
             page_count=page_count,
             raw_text="\n\n".join(page_texts),
+            pages=page_texts,
         )
 
     ocr_result = _ocr.ingest_pdf_via_ocr(path, doc_id)

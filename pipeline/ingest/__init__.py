@@ -11,6 +11,7 @@ from pipeline.ingest import docx as _docx
 from pipeline.ingest import ocr as _ocr
 from pipeline.ingest import pdf as _pdf
 from pipeline.ingest import text as _text
+from pipeline.ingest.normalize import normalize
 from pipeline.schemas import IngestedDocument
 
 _TEXT_EXTS = {".txt", ".md"}
@@ -20,7 +21,14 @@ __all__ = ["ingest_document"]
 
 
 def ingest_document(path: Union[str, Path]) -> IngestedDocument:
-    path = Path(path)
+    """Extracts, then repairs layout artifacts (normalize.py) in the full text and every page."""
+    doc = _extract(Path(path))
+    doc.raw_text = normalize(doc.raw_text)
+    doc.pages = [normalize(p) for p in doc.pages]
+    return doc
+
+
+def _extract(path: Path) -> IngestedDocument:
     doc_id = uuid.uuid4().hex[:12]
     suffix = path.suffix.lower()
 

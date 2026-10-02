@@ -2,5 +2,5 @@ client_id: exemplar
 goal: "Write a short blog post introducing the TI-4200 to engineering buyers evaluating new coordinate measuring probes."
 audience: "Quality engineers and procurement leads at mid-size industrial manufacturers."
 format: blog_post
-target_word_count: 400
+word_range: {min: 350, max: 500}
 notes: "Lead with the repeatability spec; mention lead time and ISO compliance."

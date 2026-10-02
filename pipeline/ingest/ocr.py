@@ -110,4 +110,5 @@ def ingest_pdf_via_ocr(path: Path, doc_id: str) -> IngestedDocument:
         extraction_method="ocr",
         page_count=len(images),
         raw_text="\n\n".join(page_texts),
+        pages=page_texts,
     )

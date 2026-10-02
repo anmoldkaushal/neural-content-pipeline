@@ -19,5 +19,11 @@ clients/*/knowledge_base/documents/*
 !clients/_template/knowledge_base/documents/*
 !clients/*/knowledge_base/documents/.gitkeep
 
+# Derived from those documents (readable context sections, planned pieces): same rule. The
+# exemplar's plan is hand-written synthetic data.
+clients/*/knowledge_base/context/
+clients/*/content_plan.yaml
+!clients/exemplar/content_plan.yaml
+
 # macOS Finder metadata
 .DS_Store

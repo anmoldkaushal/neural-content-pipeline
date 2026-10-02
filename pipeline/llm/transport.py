@@ -80,10 +80,12 @@ class ClaudeTransport:
     def _call_cli(self, system_prompt: str, user_prompt: str) -> LLMResult:
         assert self._cli_path is not None
         combined = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
-        cmd = [self._cli_path, "-p", "--model", self.model, combined]
+        # The prompt goes over stdin, not argv: with client context and a previous draft in it,
+        # a prompt can outgrow what a single command-line argument comfortably carries.
+        cmd = [self._cli_path, "-p", "--model", self.model]
         try:
             proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=self.timeout, stdin=subprocess.DEVNULL
+                cmd, capture_output=True, text=True, timeout=self.timeout, input=combined
             )
         except subprocess.TimeoutExpired:
             return LLMResult(available=False, error=f"claude -p timed out after {self.timeout}s")

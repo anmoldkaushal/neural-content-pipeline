@@ -12,22 +12,30 @@ microcopy_caps:
 transport:
   default: cli   # cli | sdk | off -- overridden at runtime by CONTENT_JUDGE_TRANSPORT
 
+# How far outside a brief's word range a body may land before style_lint fails it, as a fraction
+# of the bound (0.1 = 10% under min or over max). Writers miss exact counts; this keeps a 1,190-word
+# draft in a 1,200-2,000 range from costing a whole revision round.
+word_range_tolerance: 0.1
+
+# How much client context (strategy, past content, notes) a prompt may carry, in characters.
+context_budget_chars: 14000
+
 # Per content type: which micro-copy fields the menu offers (field -> candidate count) and the
-# default target word count the UI pre-fills. A format not listed here falls back to
+# default word range [min, max] the UI pre-fills. A format not listed here falls back to
 # microcopy_caps above (title/subtitle/hook/cta).
 formats:
   email:
-    target_word_count: 150
+    word_range: [100, 200]
     microcopy: {subject_line: 5, preheader: 3, cta: 3}
   linkedin_message:
-    target_word_count: 90
+    word_range: [60, 120]
     microcopy: {opener: 3, cta: 3}
   social_post:
-    target_word_count: 80
+    word_range: [50, 150]
     microcopy: {hook: 5, cta: 3}
   blog_post:
-    target_word_count: 600
+    word_range: [1200, 2000]
     microcopy: {title: 3, subtitle: 3, hook: 5, cta: 5}
   landing_page:
-    target_word_count: 400
+    word_range: [300, 600]
     microcopy: {headline: 3, subheadline: 3, cta: 5}

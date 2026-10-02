@@ -10,9 +10,10 @@ import click
 
 from pipeline import client_setup, run_job
 from pipeline.ledger import job_record as job_record_ledger
+from pipeline.ledger import lessons
 from pipeline.output import pdf_export
 from pipeline.run_job import _load_client_profile
-from pipeline.kb import approved_examples
+from pipeline.kb import approved_examples, content_plan
 from pipeline.stages import kb_add as kb_add_stage
 from pipeline.stages import kb_compile as kb_compile_stage
 from pipeline.stages import kb_verify as kb_verify_stage
@@ -51,7 +52,10 @@ def kb_compile_cmd(client_id: str) -> None:
     client_dir = CLIENTS_ROOT / client_id
     entries, warnings = kb_compile_stage.compile_kb(client_dir)
     pending = [e for e in entries if e.status == "pending"]
+    proposed = [i for i in content_plan.load(client_dir) if i.status == "proposed"]
     click.echo(f"Compiled {len(entries)} total KB entries ({len(pending)} pending review).")
+    if proposed:
+        click.echo(f"{len(proposed)} content plan item(s) proposed -- see `plan`, then `plan-approve`.")
     for w in warnings:
         click.echo(f"  warning: {w}")
 
@@ -117,16 +121,88 @@ def kb_add_cmd(
 @click.option("--brief", "brief_path", required=True, type=click.Path(exists=True))
 @click.option("--tone", "tone_preset", default=None, help="Tone preset name (defaults to the client's first preset).")
 @click.option("--angle-index", default=0, help="Which angle candidate to use (0-indexed).")
-def run_cmd(client_id: str, brief_path: str, tone_preset: Optional[str], angle_index: int) -> None:
-    output_dir = run_job.run(
-        client_id=client_id,
-        brief_path=Path(brief_path),
-        clients_root=CLIENTS_ROOT,
-        output_root=OUTPUT_ROOT,
-        tone_preset=tone_preset,
-        angle_index=angle_index,
-    )
+@click.option("--accept-preflight", is_flag=True,
+              help="Proceed past brief problems found before drafting; they are recorded and the client's rules win.")
+def run_cmd(client_id: str, brief_path: str, tone_preset: Optional[str], angle_index: int, accept_preflight: bool) -> None:
+    try:
+        output_dir = run_job.run(
+            client_id=client_id,
+            brief_path=Path(brief_path),
+            clients_root=CLIENTS_ROOT,
+            output_root=OUTPUT_ROOT,
+            tone_preset=tone_preset,
+            angle_index=angle_index,
+            accept_preflight=accept_preflight,
+        )
+    except run_job.PreflightIssues as exc:
+        lines = "\n".join(f"  - {i}" for i in exc.issues)
+        raise click.ClickException(
+            f"the brief can't pass as written:\n{lines}\nFix the brief, or rerun with --accept-preflight."
+        )
     click.echo(f"Job package written to {output_dir / 'package.json'}")
+
+
+@cli.command("plan")
+@click.option("--client", "client_id", required=True)
+def plan_cmd(client_id: str) -> None:
+    """List the client's content plan, in plan order."""
+    items = content_plan.in_order(content_plan.load(CLIENTS_ROOT / client_id))
+    if not items:
+        click.echo("No content plan yet -- kb-compile a strategy document, or add items to content_plan.yaml.")
+    for i in items:
+        keyword = f" [{i.primary_keyword}]" if i.primary_keyword else ""
+        click.echo(f"  {i.id}  {i.status:<9} #{i.priority or '-'}  {i.format}  {i.title}{keyword}")
+
+
+@cli.command("plan-approve")
+@click.option("--client", "client_id", required=True)
+@click.option("--all", "approve_all", is_flag=True, help="Approve every proposed item.")
+@click.argument("item_ids", nargs=-1)
+def plan_approve_cmd(client_id: str, approve_all: bool, item_ids: tuple[str, ...]) -> None:
+    """Approve plan items so briefs can be written from them (brief field: plan_item_id)."""
+    client_dir = CLIENTS_ROOT / client_id
+    ids = [i.id for i in content_plan.load(client_dir) if i.status == "proposed"] if approve_all else list(item_ids)
+    if not ids:
+        raise click.ClickException("name item ids, or pass --all")
+    click.echo(f"Approved {content_plan.set_status(client_dir, ids, 'approved')} plan item(s).")
+
+
+@cli.command("finish")
+@click.option("--job", "job_id", required=True, help="An escalated job under output/jobs/.")
+@click.option("--body-file", required=True, type=click.Path(exists=True), help="Your edited body text.")
+@click.option("--by", "edited_by", default="cli-user", help="Name recorded as the editor.")
+def finish_cmd(job_id: str, body_file: str, edited_by: str) -> None:
+    """Package your own edit of an escalated draft (house style and do-not-say still apply)."""
+    ok, results = run_job.finish_by_hand(job_id, Path(body_file).read_text(encoding="utf-8"),
+                                         CLIENTS_ROOT, OUTPUT_ROOT, edited_by)
+    if not ok:
+        items = [f"  - {g.gate_name}: {item}" for g in results if g.status.value == "failed" for item in g.flagged_items]
+        raise click.ClickException("the edit still fails:\n" + "\n".join(items))
+    click.echo(f"Packaged {OUTPUT_ROOT / 'jobs' / job_id / 'package.json'}")
+
+
+@cli.command("suggest-rules")
+@click.option("--client", "client_id", required=True)
+def suggest_rules_cmd(client_id: str) -> None:
+    """Propose style-guide / framing / banned-phrase rules from recurring judge notes."""
+    profile = _load_client_profile(CLIENTS_ROOT / client_id)
+    suggestions, reason = lessons.suggest_rules(OUTPUT_ROOT, profile)
+    if reason:
+        click.echo(reason)
+    for s in suggestions:
+        click.echo(f"  [{s['target']}] {s['rule']}\n      why: {s['why']} ({s['evidence']})")
+    if suggestions:
+        click.echo("Adopt one with: add-rule --client ID --target TARGET --rule \"...\"")
+
+
+@cli.command("add-rule")
+@click.option("--client", "client_id", required=True)
+@click.option("--target", type=click.Choice(sorted(lessons.TARGETS)), required=True)
+@click.option("--rule", required=True)
+def add_rule_cmd(client_id: str, target: str, rule: str) -> None:
+    """Add one rule to the client's style guide, framing rules or banned phrases (additive only)."""
+    path = lessons.apply_suggestion(CLIENTS_ROOT / client_id, target, rule)
+    click.echo(f"Added to {path}")
 
 
 @cli.command("export")

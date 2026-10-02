@@ -1,0 +1,27 @@
+# Content plan: planned pieces from the client's strategy. Items extracted from documents
+# start 'proposed'; only 'approved' items are offered when writing a brief. Direction only:
+# nothing here is ever stated in copy as a fact.
+# (Synthetic demo plan for the exemplar client, hand-written.)
+items:
+- id: plan-ex0001
+  title: How to read a probe repeatability spec before you buy
+  format: blog_post
+  priority: 1
+  primary_keyword: probe repeatability spec
+  cluster: education
+  audience: Quality engineers comparing coordinate measuring probes
+  notes: Buyer-intent explainer; ends by pointing to the TI-4200 spec sheet.
+  status: approved
+- id: plan-ex0002
+  title: What ISO 10360 compliance means for your inspection line
+  format: blog_post
+  priority: 2
+  primary_keyword: ISO 10360 probe compliance
+  cluster: education
+  status: approved
+- id: plan-ex0003
+  title: Lead times for custom probe fabrication, explained
+  format: email
+  priority: 3
+  cluster: procurement
+  status: proposed

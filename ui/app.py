@@ -5,6 +5,7 @@ draft + gates); Knowledge base and Jobs are read-only views over clients/ and ou
 Nothing here decides anything the pipeline doesn't -- it only collects choices and shows results."""
 from __future__ import annotations
 
+import datetime as dt
 import json
 import sys
 from pathlib import Path
@@ -16,10 +17,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from pipeline import brief_defaults, client_setup, run_job  # noqa: E402
+from pipeline.kb import approved_examples, content_plan, context  # noqa: E402
 from pipeline.kb.provenance import ProvenanceError, verify_client  # noqa: E402
-from pipeline.ledger import job_record, stats  # noqa: E402
+from pipeline.ledger import job_record, lessons, stats  # noqa: E402
 from pipeline.output.pdf_export import field_label  # noqa: E402
-from pipeline.schemas import Brief, TonePreset  # noqa: E402
+from pipeline.schemas import Brief, TonePreset, WordRange  # noqa: E402
 from pipeline.stages import kb_add, kb_compile, kb_verify, revise, tone_select  # noqa: E402
 
 CLIENTS_ROOT = REPO_ROOT / "clients"
@@ -44,15 +46,17 @@ def _save_uploads(files, client_dir: Path) -> None:
 
 
 def _compile(client_dir: Path) -> None:
-    with st.spinner("Extracting facts from documents (one model call per document)…"):
+    with st.spinner("Reading documents: facts, context and content plan (a few model calls per document)…"):
         entries, warnings = kb_compile.compile_kb(client_dir)
     pending = sum(1 for e in entries if e.status == "pending")
-    st.session_state["flash"] = f"Compiled: {pending} fact(s) pending review." + (
-        f" Warnings: {'; '.join(warnings)}" if warnings else "")
+    proposed = sum(1 for i in content_plan.load(client_dir) if i.status == "proposed")
+    st.session_state["flash"] = (
+        f"Compiled: {pending} fact(s) and {proposed} plan item(s) pending review."
+        + (f" Warnings: {'; '.join(warnings)}" if warnings else ""))
 
 
 def _reset_job() -> None:
-    for key in ("job_id", "step", "tone_choice"):
+    for key in ("job_id", "step", "tone_choice", "preflight"):
         st.session_state.pop(key, None)
 
 
@@ -82,11 +86,14 @@ if flash := st.session_state.pop("flash", None):
     st.toast(flash)
 
 
-def render_output(job_id: str) -> None:
-    """A finished (or blocked) job: copyable text, gate results, PDF download."""
+def render_output(job_id: str, where: str = "out") -> None:
+    """A finished (or blocked) job: copyable text, gate results, PDF download, every revision
+    round, and -- for a blocked job -- the chance to finish it by hand. `where` keeps widget keys
+    distinct when the same job is open in two tabs."""
     output_dir = OUTPUT_ROOT / "jobs" / job_id
     record = job_record.load(output_dir)
     package_path = output_dir / "package.json"
+    key = f"{where}-{job_id}"
 
     if package_path.exists():
         package = json.loads(package_path.read_text(encoding="utf-8"))
@@ -101,11 +108,11 @@ def render_output(job_id: str) -> None:
         if pdf_path.exists():
             cols[0].download_button(
                 "Download PDF", pdf_path.read_bytes(), file_name=f"{record.client_id}-{job_id}.pdf",
-                mime="application/pdf", key=f"pdf-{job_id}",
+                mime="application/pdf", key=f"pdf-{key}",
             )
         cols[1].download_button(
             "Download package.json", package_path.read_bytes(), file_name=f"{job_id}-package.json",
-            mime="application/json", key=f"json-{job_id}",
+            mime="application/json", key=f"json-{key}",
         )
         other = {f: c for f, c in (package.get("microcopy") or {}).items() if c}
         if other:
@@ -127,10 +134,49 @@ def render_output(job_id: str) -> None:
             st.markdown(f"{STATUS_ICON.get(g.status.value, '')} `{g.gate_name}`: {g.detail}")
             for item in g.flagged_items:
                 st.caption(f"  • {item}")
+    if len(record.rounds) > 1:
+        with st.expander(f"Revision history ({len(record.rounds)} rounds)"):
+            for r in record.rounds:
+                failed = [g.gate_name for g in r.gate_results if g.status.value == "failed"]
+                st.markdown(f"**Round {r.revision}** · {r.word_count} words · "
+                            + (f"failed: {', '.join(failed)}" if failed else "all gates passed"))
+                for note in r.change_notes:
+                    st.caption(f"  ✎ {note}")
     if record.human_touchpoints:
         with st.expander("Notes for human review"):
             for note in record.human_touchpoints:
                 st.markdown(f"- {note}")
+
+    failed_path = output_dir / "last_failed_draft.json"
+    if record.status == "awaiting_human" and failed_path.exists():
+        with st.expander("Finish it yourself"):
+            st.caption("Edit the last draft and package it. House style, length and do-not-say still apply; "
+                       "the judged gates are not re-run, since you are the judgement they stand in for.")
+            body = json.loads(failed_path.read_text(encoding="utf-8")).get("body", "")
+            edited = st.text_area("Your version", body, height=320, key=f"fix-{key}")
+            if st.button("Package my version", key=f"fixbtn-{key}", disabled=not reviewer.strip()):
+                ok, results = run_job.finish_by_hand(job_id, edited, CLIENTS_ROOT, OUTPUT_ROOT, reviewer.strip())
+                if ok:
+                    st.session_state["flash"] = "Packaged your version."
+                    st.rerun()
+                for g in results:
+                    for item in g.flagged_items if g.status.value == "failed" else []:
+                        st.error(f"{g.gate_name}: {item}")
+            if not reviewer.strip():
+                st.caption("Enter your name in the sidebar first.")
+
+    if record.status == "complete" and record.format and package_path.exists():
+        approved = (CLIENTS_ROOT / record.client_id / "approved_examples" / record.format / f"{job_id}.json").exists()
+        if approved:
+            st.caption(f"✓ Approved as a {record.format} voice example: future drafts of this type use it.")
+        elif st.button("Approve as a voice example", key=f"approve-{key}", disabled=not reviewer.strip(),
+                       help="Future angles, drafts and micro-copy for this client and content type match it."):
+            approved_examples.record_approval(
+                CLIENTS_ROOT / record.client_id, job_id, record.format,
+                json.loads(package_path.read_text(encoding="utf-8")), reviewer.strip(),
+                dt.date.today().isoformat())
+            st.session_state["flash"] = "Saved as an approved example."
+            st.rerun()
 
 
 tab_generate, tab_kb, tab_jobs, tab_new = st.tabs(["Generate", "Knowledge base", "Jobs", "New client"])
@@ -141,22 +187,44 @@ with tab_generate:
     step = st.session_state.get("step", "brief")
 
     if step == "brief":
-        formats = brief_defaults.known_formats(BRIEFS_ROOT, client_id)
-        fmt = st.selectbox("Content type", formats, key=f"fmt-{client_id}")
-        d = brief_defaults.defaults_for(BRIEFS_ROOT, client_id, fmt)
-        k = f"{client_id}-{fmt}"  # widget keys per client+format so switching re-prefills
+        plan_items = content_plan.writable(client_dir)
+        plan_labels = {i.id: f"{i.format.replace('_', ' ')} #{i.priority or '–'}: {i.title}"
+                       + (" (drafted)" if i.status == "drafted" else "") for i in plan_items}
+        plan_pick = st.selectbox(
+            "From the content plan", [None] + [i.id for i in plan_items], key=f"plan-{client_id}",
+            format_func=lambda i: "None: write from the prompt alone" if i is None else plan_labels[i],
+            help="Approved items from the client's content plan, in plan order. Approve items in the Knowledge base tab.",
+        )
+        item = next((i for i in plan_items if i.id == plan_pick), None)
+        if item is not None:
+            st.caption(" · ".join(x for x in (
+                f"keyword: {item.primary_keyword}" if item.primary_keyword else "",
+                f"cluster: {item.cluster}" if item.cluster else "", item.notes or "") if x))
 
-        goal = st.text_area("Prompt", d["goal"], key=f"goal-{k}", height=110,
+        formats = brief_defaults.known_formats(BRIEFS_ROOT, client_id)
+        if item is not None and item.format not in formats:
+            formats.append(item.format)
+        fmt = st.selectbox("Content type", formats, key=f"fmt-{client_id}-{plan_pick}",
+                           index=formats.index(item.format) if item is not None else 0)
+        d = brief_defaults.defaults_for(BRIEFS_ROOT, client_id, fmt)
+        k = f"{client_id}-{fmt}-{plan_pick}"  # widget keys per client+format+item so switching re-prefills
+
+        default_goal = d["goal"] if item is None else f"Write the content plan piece: {item.title}."
+        goal = st.text_area("Prompt", default_goal, key=f"goal-{k}", height=110,
                             placeholder="What should this piece do?")
         with st.expander("Modifiers (pre-filled from the client's last brief of this type)", expanded=True):
-            audience = st.text_area("Audience", d["audience"], key=f"aud-{k}", height=80)
-            c1, c2 = st.columns([1, 3])
-            words = c1.number_input("Target words", 20, 4000, int(d["target_word_count"] or 150), key=f"wc-{k}")
-            angle_hint = c2.text_input("Angle hint (optional)", key=f"hint-{k}")
+            audience = st.text_area("Audience", (item.audience if item and item.audience else d["audience"]),
+                                    key=f"aud-{k}", height=80)
+            lo, hi = d["word_range"] or (100, 300)
+            c1, c2, c3 = st.columns([1, 1, 3])
+            min_words = c1.number_input("Min words", 20, 4000, int(lo), step=50, key=f"wmin-{k}")
+            max_words = c2.number_input("Max words", 20, 4000, int(hi), step=50, key=f"wmax-{k}")
+            angle_hint = c3.text_input("Angle hint (optional)", key=f"hint-{k}")
             notes = st.text_area("Must follow", d["notes"], key=f"notes-{k}", height=90)
             st.caption(
                 f"Enforced by the gates regardless: house style list, {len(profile.do_not_say)} do-not-say "
-                f"term(s), {len(profile.do_not_frame)} framing rule(s), verified KB facts only."
+                f"term(s), {len(profile.do_not_frame)} framing rule(s), verified KB facts only. "
+                "The writer sees all of these before it drafts."
             )
 
         st.subheader("Tone")
@@ -195,14 +263,34 @@ with tab_generate:
                 else:
                     tone = tone_select.select_tone(profile, tone_pick)
                 brief = Brief(client_id=client_id, goal=goal.strip(), audience=audience.strip(), format=fmt,
-                              target_word_count=int(words), angle_hint=angle_hint.strip() or None,
-                              notes=notes.strip() or None)
-                with st.spinner("Checking provenance and generating angles…"):
+                              word_range=WordRange(min=int(min_words), max=int(max_words)),
+                              angle_hint=angle_hint.strip() or None, notes=notes.strip() or None,
+                              plan_item_id=plan_pick)
+                st.session_state.pop("preflight", None)
+                with st.spinner("Checking the brief, provenance and generating angles…"):
                     session = run_job.start(client_id, brief, CLIENTS_ROOT, OUTPUT_ROOT)
                 st.session_state.update(job_id=session.job_id, step="angle", tone_choice=tone)
                 st.rerun()
+            except run_job.PreflightIssues as exc:
+                st.session_state["preflight"] = {"issues": exc.issues, "brief": brief, "tone": tone}
             except (ValueError, ProvenanceError, run_job.JobBlocked) as exc:
                 st.error(str(exc))
+
+        if pf := st.session_state.get("preflight"):
+            st.warning("This brief can't pass as written. Fix it above and generate again, or proceed: "
+                       "the problems are recorded on the job and the client's rules win.")
+            for issue in pf["issues"]:
+                st.markdown(f"- {issue}")
+            if st.button("Proceed anyway"):
+                try:
+                    with st.spinner("Generating angles…"):
+                        session = run_job.start(client_id, pf["brief"], CLIENTS_ROOT, OUTPUT_ROOT,
+                                                preflight_ack=pf["issues"])
+                    st.session_state.pop("preflight", None)
+                    st.session_state.update(job_id=session.job_id, step="angle", tone_choice=pf["tone"])
+                    st.rerun()
+                except (ProvenanceError, run_job.JobBlocked) as exc:
+                    st.error(str(exc))
 
     elif step == "angle":
         job_id = st.session_state["job_id"]
@@ -339,6 +427,35 @@ with tab_kb:
                 st.session_state["flash"] = f"Sent {len(back)} fact(s) back for review."
                 st.rerun()
 
+    plan = content_plan.in_order(content_plan.load(client_dir))
+    proposed_count = sum(1 for i in plan if i.status == "proposed")
+    with st.expander(f"Content plan ({len(plan)} item(s), {proposed_count} to review)", expanded=proposed_count > 0):
+        st.caption("Planned pieces found in the client's strategy documents. Approve the real ones to offer them "
+                   "in Generate; this is direction for what to write, never a fact the copy may state.")
+        if plan:
+            plan_rows = [{"select": False, "id": i.id, "status": i.status, "#": i.priority or None, "title": i.title,
+                          "format": i.format, "keyword": i.primary_keyword or "", "cluster": i.cluster or "",
+                          "source": f"{i.source_doc or ''} {i.location or ''}".strip()} for i in plan]
+            plan_edited = st.data_editor(
+                plan_rows, width="stretch", hide_index=True, key=f"plan-table-{client_id}",
+                disabled=[c for c in plan_rows[0] if c != "select"],
+                column_config={"select": st.column_config.CheckboxColumn("✓", width="small"),
+                               "title": st.column_config.TextColumn(width="large")},
+            )
+            picked = [r["id"] for r in plan_edited if r["select"]]
+            c1, c2, c3 = st.columns([1, 1, 3])
+            if c1.button(f"Approve ({len(picked)})", key=f"plan-ok-{client_id}", disabled=not picked):
+                content_plan.set_status(client_dir, picked, "approved")
+                st.session_state["flash"] = f"Approved {len(picked)} plan item(s)."
+                st.rerun()
+            if c2.button(f"Reject ({len(picked)})", key=f"plan-no-{client_id}", disabled=not picked):
+                content_plan.set_status(client_dir, picked, "rejected")
+                st.session_state["flash"] = f"Rejected {len(picked)} plan item(s)."
+                st.rerun()
+            c3.caption("Edit titles, keywords or order directly in content_plan.yaml.")
+        else:
+            st.caption("No plan yet. Compile a strategy document, or write content_plan.yaml by hand.")
+
     with st.expander("Add a fact you know first-hand"):
         with st.form(f"add-fact-{client_id}", clear_on_submit=True):
             claim = st.text_input("Fact, as a plain sentence")
@@ -362,9 +479,16 @@ with tab_kb:
 
     docs_dir = client_dir / "knowledge_base" / "documents"
     docs = sorted(p.name for p in docs_dir.iterdir() if not p.name.startswith(".")) if docs_dir.exists() else []
+    context_by_name = {c.name: c for c in context.load_docs(client_dir)}
     with st.expander(f"Source documents ({len(docs)})"):
+        st.caption("The writer reads the sections of these most relevant to each piece, for direction. "
+                   "Only verified facts may be stated.")
         for name in docs:
-            st.markdown(f"- {name}")
+            c = context_by_name.get(name)
+            if c is None:
+                st.markdown(f"- {name}  _(not compiled yet)_")
+            else:
+                st.markdown(f"- **{name}** · {c.role} · {len(c.sections)} section(s)  \n  {c.summary}")
     style_guide = client_dir / "style_guide.md"
     if style_guide.exists():
         with st.expander("Style guide"):
@@ -406,6 +530,27 @@ with tab_jobs:
     if unreadable:
         st.caption(f"Skipped {len(unreadable)} unreadable record(s): {', '.join(unreadable)}")
 
+    judge_notes = lessons.load(OUTPUT_ROOT, client_id)
+    with st.expander(f"Learn from the judges ({len(judge_notes)} note(s) logged)"):
+        st.caption("Recurring judge findings across jobs, proposed as rules for this client. Nothing is added "
+                   "until you adopt it; adopted rules reach the writer before its next draft.")
+        if st.button("Suggest rules", key=f"suggest-{client_id}", disabled=not judge_notes):
+            with st.spinner("Reading the judge notes…"):
+                suggestions, reason = lessons.suggest_rules(OUTPUT_ROOT, profile)
+            st.session_state[f"suggestions-{client_id}"] = suggestions
+            if reason:
+                st.info(reason)
+            elif not suggestions:
+                st.info("Nothing recurs often enough to become a rule yet.")
+        for n, s in enumerate(st.session_state.get(f"suggestions-{client_id}", [])):
+            c1, c2 = st.columns([5, 1])
+            c1.markdown(f"**{s['target'].replace('_', ' ')}**: {s['rule']}  \n_{s['why']} ({s['evidence']})_")
+            if c2.button("Adopt", key=f"adopt-{client_id}-{n}"):
+                lessons.apply_suggestion(client_dir, s["target"], s["rule"])
+                st.session_state[f"suggestions-{client_id}"].pop(n)
+                st.session_state["flash"] = f"Added to the client's {s['target'].replace('_', ' ')}."
+                st.rerun()
+
     st.markdown("**History**")
     st.dataframe(
         [{"created (UTC)": f"{r.created_at:%Y-%m-%d %H:%M}", "job": r.job_id, "type": r.format or "—",
@@ -416,7 +561,7 @@ with tab_jobs:
     if records:
         pick = st.selectbox("Open a job", [r.job_id for r in records],
                             format_func=lambda j: next(f"{j} · {r.status} · {r.format or '—'}" for r in records if r.job_id == j))
-        render_output(pick)
+        render_output(pick, where="jobs")
 
 # ---------------------------------------------------------------- new client
 

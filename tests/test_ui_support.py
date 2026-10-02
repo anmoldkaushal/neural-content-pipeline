@@ -52,10 +52,21 @@ def test_defaults_prefer_same_format_brief_then_config(tmp_path: Path):
 
     email = brief_defaults.defaults_for(tmp_path, "acme", "email")
     assert (email["goal"], email["audience"], email["notes"]) == ("g", "founders", "n")
-    assert email["target_word_count"] == 150  # from config/pipeline_config.yaml
+    assert email["word_range"] == (100, 200)  # from config/pipeline_config.yaml
 
     blog = brief_defaults.defaults_for(tmp_path, "acme", "blog_post")
     assert blog["goal"] == "" and blog["audience"] == "founders"
+    assert blog["word_range"] == (1200, 2000)
+
+
+def test_defaults_read_a_pre_range_briefs_target_as_a_range(tmp_path: Path):
+    (tmp_path / "acme").mkdir()
+    (tmp_path / "acme" / "old.yaml").write_text(yaml.safe_dump({"format": "email", "target_word_count": 200}))
+    (tmp_path / "acme" / "new.yaml").write_text(yaml.safe_dump(
+        {"format": "blog_post", "word_range": {"min": 900, "max": 1100}}))
+
+    assert brief_defaults.defaults_for(tmp_path, "acme", "email")["word_range"] == (170, 230)
+    assert brief_defaults.defaults_for(tmp_path, "acme", "blog_post")["word_range"] == (900, 1100)
 
 
 def test_save_preset_keeps_draft_header_and_refuses_duplicates(tmp_path: Path):

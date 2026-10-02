@@ -63,14 +63,23 @@ def generate_field(
     return candidates, None
 
 
-def menu_context(brief: Brief, tone: Optional[ToneChoice]) -> str:
-    """The brief and tone lines every field prompt shares, so options fit the content type."""
+def menu_context(
+    brief: Brief,
+    tone: Optional[ToneChoice],
+    plan_block: str = "",
+    profile: Optional[ClientProfile] = None,
+) -> str:
+    """The brief, tone, plan item and framing rules every field prompt shares, so options fit the
+    content type and don't frame the piece in a way the judged gates will reject."""
     lines = [f"Content type: {brief.format}", f"Goal: {brief.goal}", f"Audience: {brief.audience}"]
     if tone:
         lines.append(f"Tone: {tone.preset_name} — {tone.resolved_style_checklist.get('tone_description', '')}")
     if brief.notes:
         lines.append(f"Must follow: {brief.notes}")
-    return "\n".join(lines) + "\n"
+    if profile is not None and profile.do_not_frame:
+        lines.append("Client framing rules (never break):")
+        lines += [f"- {rule}" for rule in profile.do_not_frame]
+    return "\n".join(lines) + "\n" + plan_block
 
 
 def generate_all(

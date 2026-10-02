@@ -15,7 +15,15 @@ publish/distribute/analyze -- those live elsewhere or arrive as inputs.
   may only ADD to the banned-word/phrase lists via its own profile, never remove from the base
   lists.
 - Adding a client: see "Adding a new client" in `QUICKSTART.md` -- `init-client`, drop docs,
-  `kb-compile`, `kb-verify`, then `run`.
+  `kb-compile`, `kb-verify`, `plan-approve`, then `run`.
+- Three knowledge layers, kept apart on purpose: facts (`kb_index.json`, the only thing a draft
+  may state), context (`knowledge_base/context/`, document sections the writer reads for
+  direction) and plan (`content_plan.yaml`, planned pieces). Context and plan are derived from
+  client documents and are gitignored like them.
+- The writer is shown every rule it is judged on (`pipeline/kb/rulebook.py`), and a revision edits
+  the failed draft with all failing gates' findings (`pipeline/stages/revise.py`). Keep the two in
+  step when adding a gate: give it an entry in revise's `_GATE_MEANING`, and put any rule it checks
+  into the rulebook.
 
 Nothing here calls the paid Anthropic API by default. `pipeline/llm/transport.py` shells out to
 `claude -p`, drawing on your Claude Code subscription; set `CONTENT_JUDGE_TRANSPORT=sdk` to use

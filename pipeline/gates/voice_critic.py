@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+from pipeline.kb import rulebook
 from pipeline.llm.transport import ClaudeTransport, call_json
 from pipeline.schemas import ClientProfile, Draft, GateResult, GateStatus, ToneChoice
 
@@ -30,12 +31,15 @@ def run(
     transport = transport or ClaudeTransport()
     template = _PROMPT_PATH.read_text(encoding="utf-8")
 
-    style_guide_summary = ", ".join(t.name for t in profile.tone_presets) or "no tone presets defined"
+    # The same style guide and full preset descriptions the writer was given, so the judge's notes
+    # measure the draft against what the writer was actually asked for, not against preset names.
+    style_guide = f"Client style guide:\n{profile.style_guide.strip()}\n\n" if profile.style_guide.strip() else ""
     user_prompt = (
         f"{template}\n\n"
         f"Client: {profile.company_name} ({profile.industry})\n"
-        f"Approved tone presets: {style_guide_summary}\n"
+        f"Approved tone presets:\n{rulebook.tone_lines(profile)}\n"
         f"{_chosen_tone_line(tone)}\n"
+        f"{style_guide}"
         f"--- DRAFT ---\n{draft.body}\n--- END DRAFT ---"
     )
 

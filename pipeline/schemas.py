@@ -7,7 +7,30 @@ import datetime as dt
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+class WordRange(BaseModel):
+    """Inclusive length bounds for a body. A range, not a single target: the writer aims inside it
+    and the style gate enforces it, which a lone number could never say."""
+
+    min: int
+    max: int
+
+    @model_validator(mode="after")
+    def _ordered(self) -> "WordRange":
+        if self.min < 1 or self.max < self.min:
+            raise ValueError(f"word range must satisfy 1 <= min <= max, got {self.min}-{self.max}")
+        return self
+
+    def label(self) -> str:
+        return f"{self.min}-{self.max} words"
+
+
+def legacy_word_range(target: int) -> WordRange:
+    """A pre-range brief's single target, widened to the band a writer would reasonably read it
+    as (15% either side)."""
+    return WordRange(min=max(1, round(target * 0.85)), max=max(1, round(target * 1.15)))
 
 
 class Brief(BaseModel):
@@ -17,10 +40,23 @@ class Brief(BaseModel):
     goal: str
     audience: str
     format: str  # e.g. "blog_post", "email", "social_post", "landing_page"
-    target_word_count: Optional[int] = None
+    word_range: Optional[WordRange] = None
     angle_hint: Optional[str] = None
     deadline: Optional[dt.date] = None
     notes: Optional[str] = None
+    # A content-plan item (clients/<id>/content_plan.yaml) this piece is written from, if any.
+    plan_item_id: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_target(cls, data: Any) -> Any:
+        # Briefs and job sessions written before word ranges carried a single target_word_count.
+        if isinstance(data, dict) and "target_word_count" in data:
+            data = dict(data)
+            target = data.pop("target_word_count")
+            if target and not data.get("word_range"):
+                data["word_range"] = legacy_word_range(int(target))
+        return data
 
 
 class ProvenanceEntry(BaseModel):
@@ -71,6 +107,7 @@ class IngestedDocument(BaseModel):
     extraction_method: str  # "native" | "text_layer" | "ocr"
     page_count: Optional[int] = None
     raw_text: str = ""
+    pages: list[str] = Field(default_factory=list)  # per-page text, when the format has pages
     warnings: list[str] = Field(default_factory=list)
     ingested_at: dt.datetime = Field(default_factory=dt.datetime.utcnow)
 
@@ -92,6 +129,7 @@ class ClientProfile(BaseModel):
     banned_phrases: list[str] = Field(default_factory=list)  # EXTRA_BANNED_PHRASES, additive only
     do_not_say: list[str] = Field(default_factory=list)  # literal terms, substring-checked
     do_not_frame: list[str] = Field(default_factory=list)  # framing/positioning rules, judged
+    style_guide: str = ""  # style_guide.md as written; the drafter and the voice judge both read it
 
 
 class Angle(BaseModel):
@@ -132,6 +170,8 @@ class Draft(BaseModel):
     outline: list[str] = Field(default_factory=list)
     claims_used: list[str] = Field(default_factory=list)  # KBEntry ids the body actually leans on
     revision: int = 0
+    # What the writer says it changed on a revision pass; empty on a first draft.
+    change_notes: list[str] = Field(default_factory=list)
 
 
 class GateStatus(str, Enum):
@@ -145,6 +185,16 @@ class GateResult(BaseModel):
     status: GateStatus
     detail: str
     flagged_items: list[str] = Field(default_factory=list)
+
+
+class RevisionRound(BaseModel):
+    """One draft and what the gates said about it -- kept for every round, not just the last, so
+    an escalation shows what was tried and whether the writer was converging."""
+
+    revision: int
+    word_count: int
+    gate_results: list[GateResult] = Field(default_factory=list)
+    change_notes: list[str] = Field(default_factory=list)
 
 
 class JobRecord(BaseModel):
@@ -163,6 +213,12 @@ class JobRecord(BaseModel):
     angle: Optional[Angle] = None
     tone: Optional[ToneChoice] = None
     microcopy_selected: dict[str, str] = Field(default_factory=dict)
+    rounds: list[RevisionRound] = Field(default_factory=list)
+    # Brief problems found before drafting that a human chose to proceed past.
+    preflight_overridden: list[str] = Field(default_factory=list)
+    plan_item_id: Optional[str] = None
+    # Set when a human finished an escalated draft by hand instead of the pipeline.
+    human_edited: bool = False
 
 
 class JobSession(BaseModel):
@@ -177,3 +233,47 @@ class JobSession(BaseModel):
     tone: Optional[ToneChoice] = None
     microcopy_menu: dict[str, list[MicrocopyCandidate]] = Field(default_factory=dict)
     microcopy_errors: dict[str, str] = Field(default_factory=dict)
+    preflight_overridden: list[str] = Field(default_factory=list)
+
+
+class PlanItem(BaseModel):
+    """One planned piece from a client's content strategy (clients/<id>/content_plan.yaml). This
+    is direction -- what to write about, for whom, against which keyword -- never a fact a draft
+    may state. Extracted items start 'proposed'; only 'approved' ones are offered to a brief."""
+
+    id: str
+    title: str
+    format: str = "blog_post"
+    priority: int = 0  # order within the plan; 1 comes first, 0 means unranked
+    primary_keyword: Optional[str] = None
+    cluster: Optional[str] = None  # e.g. "comparison", "location", "education"
+    audience: Optional[str] = None
+    notes: Optional[str] = None
+    source_doc: Optional[str] = None
+    location: Optional[str] = None
+    status: str = "proposed"  # "proposed" | "approved" | "drafted" | "rejected"
+    job_ids: list[str] = Field(default_factory=list)
+
+
+CONTEXT_ROLES = {
+    "strategy": "plans, positioning, audiences, keywords: direction for what to write",
+    "past_content": "pieces the client already published: a reference for voice and coverage",
+    "brand": "brand or style guidance",
+    "notes": "meeting notes or transcripts",
+    "other": "anything else",
+}
+
+
+class ContextSection(BaseModel):
+    heading: str
+    text: str
+
+
+class ContextDoc(BaseModel):
+    """A client document kept readable for the writer, beside the facts extracted from it. The
+    writer may take direction from it; only verified KB facts may be stated as fact."""
+
+    name: str  # the source file name under knowledge_base/documents/
+    role: str = "other"  # a CONTEXT_ROLES key
+    summary: str = ""
+    sections: list[ContextSection] = Field(default_factory=list)

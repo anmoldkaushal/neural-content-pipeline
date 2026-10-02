@@ -1,9 +1,18 @@
-Write the full draft described by the working spec below. Follow the outline and style checklist
-exactly. Use only the facts provided in claims_to_use — if the brief wants something said that
-isn't supported by those facts, leave it out rather than inventing a supporting fact.
+Write the full draft described by the working spec below, for the client whose rules follow.
 
-If the spec includes a "revision_instruction" field, this is a revision of a previous draft that
-failed a specific gate — fix exactly what it describes, do not rewrite unrelated parts.
+- Follow the outline and style checklist. Land the body inside the word range.
+- Follow every client rule below; the draft is checked against each of them after you finish.
+- State facts about the client only from VERIFIED FACTS. If the brief wants something said that
+  no verified fact supports, leave it out rather than inventing support. General explanation is
+  fine; specific figures, statistics, research findings and anything about the client's offering,
+  people, places, prices, schedule or results need a verified fact.
+- CLIENT CONTEXT (if present) tells you what to write about, for whom, and with which keywords and
+  positioning. Use it for direction; never state anything from it as fact unless it is also a
+  verified fact.
+- If a content plan item is given, the piece is that item: cover its topic and use its primary
+  keyword naturally.
+- If "known_conflicts" is present, a human chose to proceed past a clash between the brief and
+  the client's rules: the client's rules win.
 
 Respond as a single JSON object: {"body": "the full draft text", "claims_used": ["kb-id-1"]}
-(claims_used should be the subset of claims_to_use the body actually references).
+(claims_used is every verified fact id the body actually relies on).

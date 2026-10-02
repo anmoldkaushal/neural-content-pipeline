@@ -5,8 +5,10 @@ from the base lists below. This file fails the run — it does not warn."""
 from __future__ import annotations
 
 import re
+from typing import Optional
 
-from pipeline.schemas import ClientProfile, Draft, GateResult, GateStatus
+from pipeline import config
+from pipeline.schemas import ClientProfile, Draft, GateResult, GateStatus, WordRange
 
 # Base, non-overridable list. A client extends this; nothing here is ever removed by a client.
 BASE_BANNED_WORDS = [
@@ -28,9 +30,9 @@ def _find_hits(body: str, terms: list[str]) -> list[str]:
     return [t for t in terms if t.lower() in lowered]
 
 
-def find_violations(text: str, profile: ClientProfile) -> list[str]:
-    """Banned words/phrases and dashes -- the length-independent checks, reused by
-    microcopy_lint.py so short copy is held to the same house rules as the body."""
+def banned_lists(profile: ClientProfile) -> tuple[list[str], list[str]]:
+    """The effective (base + client additions) banned words and phrases -- what this gate checks,
+    and what the drafter is shown up front so it isn't graded on a list it never saw."""
     banned_words = list(BASE_BANNED_WORDS)
     for w in profile.banned_words:
         if w.lower() not in {b.lower() for b in banned_words}:
@@ -40,6 +42,13 @@ def find_violations(text: str, profile: ClientProfile) -> list[str]:
     for p in profile.banned_phrases:
         if p.lower() not in {b.lower() for b in banned_phrases}:
             banned_phrases.append(p)
+    return banned_words, banned_phrases
+
+
+def find_violations(text: str, profile: ClientProfile) -> list[str]:
+    """Banned words/phrases and dashes -- the length-independent checks, reused by
+    microcopy_lint.py so short copy is held to the same house rules as the body."""
+    banned_words, banned_phrases = banned_lists(profile)
 
     flagged: list[str] = []
     flagged += [f"banned word: {w!r}" for w in _find_hits(text, banned_words)]
@@ -50,14 +59,41 @@ def find_violations(text: str, profile: ClientProfile) -> list[str]:
     return flagged
 
 
-def run(draft: Draft, profile: ClientProfile) -> GateResult:
-    flagged = find_violations(draft.body, profile)
+def count_words(text: str) -> int:
+    return len(re.findall(r"\S+", text))
 
-    word_count = len(re.findall(r"\S+", draft.body))
+
+def length_violations(word_count: int, word_range: Optional[WordRange], tolerance: float) -> list[str]:
+    """The brief's range, with tolerance, inside the absolute house floor and ceiling. Each
+    message says how far off the draft is, so a revision knows how much to add or cut."""
+    flagged: list[str] = []
     if word_count < MIN_WORDS:
-        flagged.append(f"too short: {word_count} words (min {MIN_WORDS})")
+        flagged.append(f"too short: {word_count} words (house minimum {MIN_WORDS})")
     if word_count > MAX_WORDS:
-        flagged.append(f"too long: {word_count} words (max {MAX_WORDS})")
+        flagged.append(f"too long: {word_count} words (house maximum {MAX_WORDS})")
+    if word_range is not None and not flagged:
+        if word_count < word_range.min * (1 - tolerance):
+            flagged.append(
+                f"too short for the brief: {word_count} words, range {word_range.label()} "
+                f"(add about {word_range.min - word_count})"
+            )
+        elif word_count > word_range.max * (1 + tolerance):
+            flagged.append(
+                f"too long for the brief: {word_count} words, range {word_range.label()} "
+                f"(cut about {word_count - word_range.max})"
+            )
+    return flagged
+
+
+def run(
+    draft: Draft,
+    profile: ClientProfile,
+    word_range: Optional[WordRange] = None,
+    tolerance: Optional[float] = None,
+) -> GateResult:
+    flagged = find_violations(draft.body, profile)
+    tolerance = config.word_range_tolerance() if tolerance is None else tolerance
+    flagged += length_violations(count_words(draft.body), word_range, tolerance)
 
     if flagged:
         return GateResult(

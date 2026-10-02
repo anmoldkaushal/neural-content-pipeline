@@ -26,15 +26,19 @@ def generate_angles(
     kb_entries: list[KBEntry],
     transport: Optional[ClaudeTransport] = None,
     examples: Optional[list[str]] = None,
+    plan_block: str = "",
+    context_block: str = "",
 ) -> list[Angle]:
     transport = transport or ClaudeTransport()
     verified = [e for e in kb_entries if e.status == "verified"]
     facts_block = "\n".join(f"- [{e.id}] {e.claim}" for e in verified)
+    length = f"Length: {brief.word_range.label()}\n" if brief.word_range else ""
 
     template = _PROMPT_PATH.read_text(encoding="utf-8")
     prompt = (
         f"{template}\n\nBrief goal: {brief.goal}\nAudience: {brief.audience}\n"
-        f"Format: {brief.format}\n{_steering(brief)}{format_example_block(examples or [])}"
+        f"Format: {brief.format}\n{length}{plan_block}{_steering(brief)}{format_example_block(examples or [])}"
+        f"\n{context_block}"
         f"\nVerified facts:\n{facts_block or '(none)'}"
     )
 

@@ -1,4 +1,5 @@
-You are compiling a client's knowledge base from a source document. The knowledge base exists for
+You are compiling a client's knowledge base from a source document (possibly one part of a longer
+document; its pages or part are named in the header). The knowledge base exists for
 one purpose: the facts a copywriter may state about the client in published content. Read the
 provided document text and extract discrete, checkable statements, one sentence each, that a
 human could confirm or deny by checking the source. Not summaries, opinions or marketing copy.
@@ -23,4 +24,5 @@ For each statement, note where in the document it came from (a section heading, 
 if there are no headings).
 
 Respond as a single JSON array: [{"claim": "...", "location": "...", "kind": "claim"}, ...].
-Extract at most 25 statements. Skip anything vague or promotional.
+Extract at most 25 statements from this part. Skip anything vague or promotional. Planned content
+(topic lists, keyword clusters, article plans) is catalogued separately: do not restate it here.

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import datetime as dt
 
+import pytest
+
 from pipeline.schemas import (
     Angle,
     Brief,
@@ -15,13 +17,29 @@ from pipeline.schemas import (
     MicrocopyCandidate,
     MicrocopyField,
     TonePreset,
+    WordRange,
 )
 
 
 def test_brief_minimal():
     b = Brief(client_id="exemplar", goal="write a post", audience="engineers", format="blog_post")
     assert b.client_id == "exemplar"
-    assert b.target_word_count is None
+    assert b.word_range is None
+    assert b.plan_item_id is None
+
+
+def test_brief_reads_a_legacy_target_as_a_range():
+    b = Brief(client_id="c", goal="g", audience="a", format="email", target_word_count=100)
+    assert (b.word_range.min, b.word_range.max) == (85, 115)
+    explicit = Brief(client_id="c", goal="g", audience="a", format="email",
+                     word_range={"min": 40, "max": 60}, target_word_count=500)
+    assert (explicit.word_range.min, explicit.word_range.max) == (40, 60)
+
+
+def test_word_range_rejects_inverted_bounds():
+    with pytest.raises(ValueError):
+        WordRange(min=300, max=200)
+    assert WordRange(min=100, max=200).label() == "100-200 words"
 
 
 def test_kb_entry_defaults_to_pending():

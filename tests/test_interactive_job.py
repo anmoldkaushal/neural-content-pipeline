@@ -42,6 +42,10 @@ class ScriptedTransport:
             reply = {"verdict": "on_voice", "notes": []}
         elif p.startswith("You are an independent compliance reviewer"):
             reply = {"verdict": "clean", "notes": []}
+        elif p.startswith("You are an independent fact checker"):
+            reply = {"verdict": "supported", "unsupported": []}
+        elif p.startswith("You are checking a content brief"):
+            reply = {"conflicts": []}
         else:
             reply = {}
         return LLMResult(available=True, text=json.dumps(reply))

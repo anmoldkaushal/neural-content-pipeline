@@ -49,6 +49,16 @@ def microcopy_fields(format_: str | None, fallback: dict[str, int]) -> dict[str,
     return {name: microcopy_cap(name, count) for name, count in fallback.items()}
 
 
-def default_word_count(format_: str) -> int | None:
-    value = formats().get(format_, {}).get("target_word_count")
-    return int(value) if value is not None else None
+def default_word_range(format_: str) -> tuple[int, int] | None:
+    value = formats().get(format_, {}).get("word_range")
+    if not value or len(value) != 2:
+        return None
+    return int(value[0]), int(value[1])
+
+
+def word_range_tolerance(fallback: float = 0.1) -> float:
+    return float(load().get("word_range_tolerance", fallback))
+
+
+def context_budget_chars(fallback: int = 14000) -> int:
+    return int(load().get("context_budget_chars", fallback))
