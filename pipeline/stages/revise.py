@@ -8,6 +8,8 @@ next pass); the actual loop lives in run_job.py, which is where all stages are w
 keeping this logic unit-testable in isolation."""
 from __future__ import annotations
 
+from typing import Union
+
 from pipeline.schemas import GateResult, GateStatus
 
 
@@ -25,7 +27,10 @@ def should_retry(gate_result: GateResult, attempts_so_far: int, budget: int) -> 
     return gate_result.status == GateStatus.FAILED and attempts_so_far < budget
 
 
-def next_revision_instruction(gate_result: GateResult) -> str:
-    """Turns a gate failure into a concrete instruction for the next draft pass."""
-    items = "; ".join(gate_result.flagged_items) or gate_result.detail
-    return f"The previous draft failed the {gate_result.gate_name!r} gate: {items}. Fix these specific issues."
+def next_revision_instruction(gate_results: Union[GateResult, list[GateResult]]) -> str:
+    """Turns gate failures into one concrete instruction for the next draft pass. Every failing
+    gate goes in at once: fixing one gate's notes alone tends to break another."""
+    if isinstance(gate_results, GateResult):
+        gate_results = [gate_results]
+    parts = [f"the {g.gate_name!r} gate: {'; '.join(g.flagged_items) or g.detail}" for g in gate_results]
+    return f"The previous draft failed {' AND '.join(parts)}. Fix all of these specific issues."

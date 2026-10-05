@@ -6,6 +6,7 @@ Nothing here decides anything the pipeline doesn't -- it only collects choices a
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -15,7 +16,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from pipeline import brief_defaults, client_setup, run_job  # noqa: E402
+from pipeline import brief_defaults, client_setup, config, profile_review, run_job  # noqa: E402
 from pipeline.kb.provenance import ProvenanceError, verify_client  # noqa: E402
 from pipeline.ledger import job_record, stats  # noqa: E402
 from pipeline.output import pdf_export  # noqa: E402
@@ -27,6 +28,8 @@ CLIENTS_ROOT = REPO_ROOT / "clients"
 OUTPUT_ROOT = REPO_ROOT / "output"
 BRIEFS_ROOT = REPO_ROOT / "local_briefs"
 CUSTOM_TONE = "Custom tone…"
+CUSTOM_TYPE = "__custom__"
+MICROCOPY_MODES = {"pick": "Pick micro-copy before drafting", "skip": "Skip it, write the body now"}
 WRITE_OWN = "Write my own…"
 DOC_TYPES = ["pdf", "docx", "txt", "md", "png", "jpg", "jpeg"]
 MIN_WORDS, MAX_WORDS = 20, 4000
@@ -47,7 +50,10 @@ def _clients() -> list[str]:
 
 
 def _label(name: str) -> str:
-    return field_label(name)
+    if name == CUSTOM_TYPE:
+        return "Custom content type…"
+    custom = profile_review.load_brief_defaults(client_dir)["content_types"].get(name, {})  # the sidebar's client
+    return custom.get("label") or field_label(name)
 
 
 def _clamp_words(value) -> int:
@@ -84,8 +90,13 @@ def _restore_brief(session: JobSession) -> None:
     """Puts a job's brief and tone back into the brief form. Streamlit drops a widget's state once it
     stops rendering, so without this, going back from the angle step would wipe what was typed."""
     b, ss = session.brief, st.session_state
-    k = f"{b.client_id}-{b.format}"
-    ss[f"fmt-{b.client_id}"] = b.format
+    if b.format in brief_defaults.known_formats(BRIEFS_ROOT, b.client_id, client_dir):
+        k = f"{b.client_id}-{b.format}"
+        ss[f"fmt-{b.client_id}"] = b.format
+    else:
+        k = f"{b.client_id}-{CUSTOM_TYPE}"
+        ss[f"fmt-{b.client_id}"] = CUSTOM_TYPE
+        ss[f"ctype-{b.client_id}"], ss[f"ctdesc-{b.client_id}"] = b.format, b.format_description or ""
     ss[f"goal-{k}"], ss[f"aud-{k}"] = b.goal, b.audience
     ss[f"wc-{k}"] = _clamp_words(b.target_word_count)
     ss[f"hint-{k}"], ss[f"notes-{k}"] = b.angle_hint or "", b.notes or ""
@@ -151,6 +162,8 @@ def _gates(record) -> None:
             st.markdown(f"{GATE_STATUS.get(g.status.value, g.status.value)} · `{g.gate_name}`{extra}  \n{g.detail}")
             for item in g.flagged_items:
                 st.caption(f"• {item}")
+            for note in g.notes:
+                st.caption(f"◦ minor: {note}")
 
 
 def _microcopy_picker(session: JobSession, key: str) -> dict[str, str]:
@@ -235,6 +248,10 @@ def render_output(job_id: str, where: str) -> None:
             body = json.loads(failed_path.read_text(encoding="utf-8")).get("body", "")
             st.warning("No package: this is the last draft, which failed a gate. See the gates below.")
             st.code(body, language=None, wrap_lines=True)
+            with st.container(horizontal=True, vertical_alignment="center"):
+                st.button("Add micro-copy", key=f"{where}-mcoff-{job_id}", disabled=True)
+                st.caption("Micro-copy can be added once a draft passes its gates. Start a new piece or "
+                           "\"Reuse this brief\" to try again.")
         elif record.status == "awaiting_selection":
             st.info("This job stopped before drafting.")
         _gates(record)
@@ -304,9 +321,16 @@ with tab_generate:
     if step == "brief":
         brief_col, tone_col = st.columns([3, 2], gap="large")
         with brief_col:
-            formats = brief_defaults.known_formats(BRIEFS_ROOT, client_id)
+            formats = brief_defaults.known_formats(BRIEFS_ROOT, client_id, client_dir) + [CUSTOM_TYPE]
             fmt = st.selectbox("Content type", formats, key=f"fmt-{client_id}", format_func=_label)
-            d = brief_defaults.defaults_for(BRIEFS_ROOT, client_id, fmt)
+            custom_type = fmt == CUSTOM_TYPE
+            if custom_type:
+                c1, c2 = st.columns([1, 2])
+                type_name = c1.text_input("Content type name", key=f"ctype-{client_id}", placeholder="e.g. Partner follow-up")
+                type_desc = c2.text_input("What it is", key=f"ctdesc-{client_id}",
+                                          placeholder="e.g. a short threaded reply to a cold email that got no answer")
+                remember_type = st.checkbox("Save to this client's content types", value=True, key=f"ctrem-{client_id}")
+            d = brief_defaults.defaults_for(BRIEFS_ROOT, client_id, "" if custom_type else fmt, client_dir)
             k = f"{client_id}-{fmt}"  # widget keys per client+format so switching re-prefills
             for key, value in ((f"goal-{k}", d["goal"]), (f"aud-{k}", d["audience"]), (f"notes-{k}", d["notes"]),
                                (f"wc-{k}", _clamp_words(d["target_word_count"])), (f"hint-{k}", "")):
@@ -320,7 +344,8 @@ with tab_generate:
             words = c1.number_input("Target words", MIN_WORDS, MAX_WORDS, step=10, key=f"wc-{k}")
             angle_hint = c2.text_input("Angle hint (optional)", key=f"hint-{k}")
             st.caption(
-                "Audience, words and must-follow are pre-filled from this client's last brief of this type. "
+                "Audience, words and must-follow are pre-filled from the client profile (Knowledge base → "
+                "Client profile → Brief defaults). "
                 f"The gates enforce regardless: house style list, {len(profile.do_not_say)} do-not-say "
                 f"term(s), {len(profile.do_not_frame)} framing rule(s), verified KB facts only."
             )
@@ -353,6 +378,8 @@ with tab_generate:
             missing.append("clear the provenance issues in the sidebar")
         if not goal.strip():
             missing.append("write a prompt")
+        if custom_type and not (type_name.strip() and type_desc.strip()):
+            missing.append("name and describe the custom content type")
         if tone_pick == CUSTOM_TONE and not custom_desc.strip():
             missing.append("describe the custom tone")
         with st.container(horizontal=True, vertical_alignment="center"):
@@ -365,7 +392,14 @@ with tab_generate:
                     tone = tone_select.custom_tone(custom_desc, custom_name, custom_sample)
                 else:
                     tone = tone_select.select_tone(profile, tone_pick)
+                if custom_type:
+                    fmt, fmt_desc = re.sub(r"[^a-z0-9]+", "_", type_name.strip().lower()).strip("_"), type_desc.strip()
+                    if remember_type:
+                        fmt = profile_review.add_content_type(client_dir, type_name, fmt_desc, int(words))
+                else:
+                    fmt_desc = d["description"] or None
                 brief = Brief(client_id=client_id, goal=goal.strip(), audience=audience.strip(), format=fmt,
+                              format_description=fmt_desc,
                               target_word_count=int(words), angle_hint=angle_hint.strip() or None,
                               notes=notes.strip() or None)
                 with st.spinner("Checking provenance and generating angles…"):
@@ -403,17 +437,23 @@ with tab_generate:
             st.session_state["angle_pick"] = chosen_angle
             st.rerun()
         angle_pick = st.session_state.get("angle_pick")
+        mode = st.segmented_control(
+            "Micro-copy", list(MICROCOPY_MODES), key=f"mcmode-{job_id}", default="pick",
+            format_func=MICROCOPY_MODES.get, help="Subject lines, openers, calls to action and so on. If you skip, "
+                                                  "you can still add them to the finished piece.")
+        skipping = mode == "skip"
         with st.container(horizontal=True, vertical_alignment="center"):
             if st.button("← Edit brief", type="tertiary"):
                 _restore_brief(session)
                 _reset_job()
                 st.rerun()
-            pick_copy = st.button("Choose micro-copy", type="primary", disabled=angle_pick is None,
-                                  help="Subject lines, openers, calls to action and so on, picked before drafting")
-            skip_copy = st.button("Skip micro-copy and write draft", disabled=angle_pick is None,
-                                  help="Drafts the body only. You can add micro-copy to the finished piece.")
+            go = st.button("Write draft and run gates" if skipping else "Generate micro-copy options",
+                           type="primary", disabled=angle_pick is None or mode is None)
             if angle_pick is None:
                 st.caption("To continue: pick an angle.")
+            elif mode is None:
+                st.caption("To continue: choose whether to pick micro-copy.")
+        pick_copy, skip_copy = go and not skipping, go and skipping
         if pick_copy:
             with st.spinner("Generating micro-copy options…"):
                 run_job.build_microcopy_menu(job_id, angle_pick, st.session_state["tone_choice"], CLIENTS_ROOT, OUTPUT_ROOT)
@@ -468,6 +508,131 @@ with tab_generate:
                 st.rerun()
 
 # ---------------------------------------------------------------- knowledge base
+
+REVIEW_PILL = {"draft": "🟡 Draft", "reviewed": "🔵 Reviewed", "final": "🟢 Final"}
+
+
+def _lines(text: str) -> list[str]:
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def _section_editor(client_dir: Path, section: str, key: str, locked: bool):
+    """The edit widgets for one profile section; returns the edited content to save."""
+    content = profile_review.section_content(client_dir, section)
+    if section == "style_guide":
+        return st.text_area("Style guide", content, height=260, key=key, disabled=locked, label_visibility="collapsed")
+    if section == "tone_presets":
+        st.caption("One row per tone. Add a row at the bottom; select a row and press Delete to remove it.")
+        rows = st.data_editor(
+            [{"name": t.get("name", ""), "description": t.get("description", ""), "sample_line": t.get("sample_line", "")}
+             for t in content] or [{"name": "", "description": "", "sample_line": ""}],
+            num_rows="dynamic", width="stretch", hide_index=True, key=key, disabled=locked,
+            column_config={"name": st.column_config.TextColumn("Name", width="small"),
+                           "description": st.column_config.TextColumn("Description", width="large"),
+                           "sample_line": st.column_config.TextColumn("Sample line", width="large")})
+        return [r for r in rows if (r.get("name") or "").strip()]
+    if section == "banned_words":
+        st.caption("One per line. These add to the house banned list; they can never remove from it.")
+        c1, c2, c3 = st.columns(3)
+        return {
+            "do_not_say": _lines(c1.text_area("Do not say (this client's terms)", "\n".join(content["do_not_say"]),
+                                              height=220, key=f"{key}-dns", disabled=locked)),
+            "extra_banned_words": _lines(c2.text_area("Extra banned words", "\n".join(content["extra_banned_words"]),
+                                                      height=220, key=f"{key}-bw", disabled=locked)),
+            "extra_banned_phrases": _lines(c3.text_area("Extra banned phrases", "\n".join(content["extra_banned_phrases"]),
+                                                        height=220, key=f"{key}-bp", disabled=locked)),
+        }
+    if section == "framing_rules":
+        st.caption("Each rule is a full sentence the framing reviewer checks a draft's meaning against.")
+        rows = st.data_editor([{"rule": r} for r in content] or [{"rule": ""}], num_rows="dynamic", width="stretch",
+                              hide_index=True, key=key, disabled=locked,
+                              column_config={"rule": st.column_config.TextColumn("Rule", width="large")})
+        return [r["rule"] for r in rows if (r.get("rule") or "").strip()]
+    # brief_defaults
+    st.caption("What a new brief starts from. A content type's own row wins over the client-wide fields.")
+    c1, c2 = st.columns(2)
+    audience = c1.text_area("Audience (client-wide)", content["audience"], height=120, key=f"{key}-aud", disabled=locked)
+    must = c2.text_area("Must follow (client-wide)", content["must_follow"], height=120, key=f"{key}-mf", disabled=locked)
+    st.markdown("**Per content type** :gray[· built-in types: " + ", ".join(config.formats()) + "; any other name is a custom type]")
+    rows = st.data_editor(
+        [{"type": k, "label": v.get("label", ""), "description": v.get("description", ""), "audience": v.get("audience", ""),
+          "must_follow": v.get("must_follow", ""), "target_word_count": v.get("target_word_count")}
+         for k, v in content["content_types"].items()]
+        or [{"type": "", "label": "", "description": "", "audience": "", "must_follow": "", "target_word_count": None}],
+        num_rows="dynamic", width="stretch", hide_index=True, key=f"{key}-types", disabled=locked,
+        column_config={"type": st.column_config.TextColumn("Type", width="small"),
+                       "label": st.column_config.TextColumn("Label", width="small"),
+                       "description": st.column_config.TextColumn("What it is (custom types)", width="medium"),
+                       "audience": st.column_config.TextColumn("Audience", width="medium"),
+                       "must_follow": st.column_config.TextColumn("Must follow", width="medium"),
+                       "target_word_count": st.column_config.NumberColumn("Words", min_value=MIN_WORDS, max_value=MAX_WORDS)})
+    types = {}
+    for r in rows:
+        name = (r.get("type") or "").strip()
+        if name:
+            types[name] = {k: (r.get(k).strip() if isinstance(r.get(k), str) else r.get(k))
+                           for k in ("label", "description", "audience", "must_follow", "target_word_count")}
+            if types[name]["target_word_count"] is not None:
+                types[name]["target_word_count"] = int(types[name]["target_word_count"])
+    return {"audience": audience, "must_follow": must, "content_types": types}
+
+
+@st.fragment
+def profile_editor(client_id: str, client_dir: Path, reviewer: str) -> None:
+    """Review the drafted profile section by section: edit in place, then mark Reviewed or Final."""
+    statuses = profile_review.status(client_dir)
+    n_final = sum(v["status"] == "final" for v in statuses.values())
+    no_name = not reviewer.strip()
+    if n_final == len(statuses):
+        st.success("Profile is final. Every section has been reviewed and signed off.")
+    else:
+        st.info(f"{n_final} of {len(statuses)} sections final. Jobs still run, but their notes and PDF say the "
+                "profile isn't final." + (" Enter your name in the sidebar to edit or sign off." if no_name else ""))
+
+    flags = profile_review.flags(client_dir)
+    if flags:
+        open_n = sum(1 for f in flags if not f["resolved_by"])
+        with st.container(border=True):
+            st.markdown(f"**Flags from the draft** :gray[· {open_n} open, things the drafting step couldn't settle]")
+            for i, f in enumerate(flags):
+                done = st.checkbox(f["text"], value=bool(f["resolved_by"]), key=f"flag-{client_id}-{i}", disabled=no_name,
+                                   help=f"Resolved by {f['resolved_by']} on {f['resolved_at']}" if f["resolved_by"] else None)
+                if done != bool(f["resolved_by"]):
+                    profile_review.resolve_flag(client_dir, i, reviewer, resolved=done)
+                    st.rerun(scope="fragment")
+
+    for section, title in profile_review.SECTIONS.items():
+        info = statuses[section]
+        locked = info["status"] == "final"
+        label = f"{title} · {REVIEW_PILL[info['status']]}" + (" · changed" if info["changed"] else "")
+        with st.expander(label, expanded=info["status"] != "final"):
+            if info["by"]:
+                st.caption(f"Marked {info['status'] if not info['changed'] else 'earlier'} by {info['by']} on {info['at']}")
+            if info["changed"]:
+                st.warning(f"Edited outside the app: {info['changed']}, so it needs another look.")
+            version = profile_review._hash(profile_review.section_content(client_dir, section))
+            edited = _section_editor(client_dir, section, f"pe-{client_id}-{section}-{version}", locked or no_name)
+            with st.container(horizontal=True, vertical_alignment="center"):
+                if not locked:
+                    if st.button("Save changes", key=f"pe-save-{client_id}-{section}", disabled=no_name):
+                        profile_review.save_section(client_dir, section, edited)
+                        st.session_state["flash"] = f"Saved {title.lower()}."
+                        st.rerun()
+                    if info["status"] == "draft" and st.button("Mark reviewed", key=f"pe-rev-{client_id}-{section}",
+                                                               disabled=no_name, help="Saves your edits too"):
+                        profile_review.save_section(client_dir, section, edited)
+                        profile_review.set_status(client_dir, section, "reviewed", reviewer)
+                        st.rerun()
+                    if st.button("Mark final", type="primary", key=f"pe-fin-{client_id}-{section}", disabled=no_name,
+                                 help="Saves your edits and locks the section"):
+                        profile_review.save_section(client_dir, section, edited)
+                        profile_review.set_status(client_dir, section, "final", reviewer)
+                        st.rerun()
+                elif st.button("Reopen", key=f"pe-reopen-{client_id}-{section}", disabled=no_name,
+                               help="Back to Reviewed so it can be edited"):
+                    profile_review.set_status(client_dir, section, "reviewed", reviewer)
+                    st.rerun()
+
 
 
 @st.fragment
@@ -611,37 +776,12 @@ with tab_kb:
             st.caption("Only claims about the client go to review; style rules and reference material are set aside.")
 
     with profile_tab:
-        style_guide = client_dir / "style_guide.md"
-        guide_text = style_guide.read_text(encoding="utf-8") if style_guide.exists() else ""
-        if guide_text and "DRAFT" in guide_text.splitlines()[0]:
-            st.warning("This profile is still marked DRAFT: review the style guide, tone presets and constraints "
-                       f"in clients/{client_id}/ before the first real job.")
-        left, right = st.columns([3, 2], gap="large")
-        with left:
-            st.markdown("**Style guide**")
-            if guide_text:
-                with st.container(border=True, height=420):
-                    st.markdown(guide_text)
-            else:
-                st.caption("No style guide.")
-        with right:
-            st.markdown(f"**Tone presets ({len(profile.tone_presets)})**")
-            for t in profile.tone_presets:
-                st.markdown(f"**{t.name}**: {t.description}  \n:gray[_“{t.sample_line}”_]")
-            constraints_path = client_dir / "constraints.yaml"
-            if constraints_path.exists():
-                data = yaml.safe_load(constraints_path.read_text(encoding="utf-8")) or {}
-                st.markdown("**Do not say**")
-                st.markdown(", ".join(f"`{t}`" for t in data.get("do_not_say") or []) or ":gray[none]")
-                if data.get("do_not_frame"):
-                    st.markdown("**Do not frame**")
-                    for rule in data["do_not_frame"]:
-                        st.markdown(f"- {rule}")
-            docs_dir = client_dir / "knowledge_base" / "documents"
-            docs = sorted(p.name for p in docs_dir.iterdir() if not p.name.startswith(".")) if docs_dir.exists() else []
-            with st.expander(f"Source documents ({len(docs)})"):
-                for name in docs:
-                    st.markdown(f"- {name}")
+        profile_editor(client_id, client_dir, reviewer)
+        docs_dir = client_dir / "knowledge_base" / "documents"
+        docs = sorted(p.name for p in docs_dir.iterdir() if not p.name.startswith(".")) if docs_dir.exists() else []
+        with st.expander(f"Source documents ({len(docs)})"):
+            for name in docs:
+                st.markdown(f"- {name}")
 
 # ---------------------------------------------------------------- jobs
 

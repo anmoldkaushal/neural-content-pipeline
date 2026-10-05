@@ -34,7 +34,21 @@ The orchestrator runs in three phases (`start` -> `build_microcopy_menu` -> `exe
   highest-priority gate: same reasoning as `longevity-science-daily`'s `entailment_gate.py` -- an
   unsupported claim is the costliest failure mode.
 - **`voice_critic`** -- LLM judge, independent call. Reports SKIPPED (never PASSED) if the
-  transport is unavailable -- same discipline as `llm_judge.py`.
+  transport is unavailable -- same discipline as `llm_judge.py`. Judged within the client's framing
+  rules and the brief's must-follow, so it can't demand what those forbid.
+- **Both judged gates** (`voice_critic`, `client_constraints_critic`) mark each note blocking or
+  minor (`pipeline/gates/judged.py`); only a blocking note fails, minor notes ride on the result for
+  the human. A note with no severity counts as blocking. A failed revise pass gets every failing
+  gate's notes plus the previous draft, and edits it rather than starting over.
+
+## Client profile review
+
+`pipeline/profile_review.py`: the drafted profile is reviewed per section (style guide, tone
+presets, banned words, framing rules, brief defaults), Draft -> Reviewed -> Final, in
+`clients/<id>/profile_review.json`. Final locks a section; an edit outside the app steps it back
+down. Jobs run on a non-final profile, but the job notes and PDF say which sections aren't final.
+Brief defaults (`brief_defaults.yaml`: audience, must-follow, per-content-type overrides, custom
+content types) pre-fill the brief form.
 
 ## Local UI (v2)
 

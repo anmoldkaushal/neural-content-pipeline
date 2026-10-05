@@ -11,6 +11,7 @@ from typing import Optional
 
 import yaml
 
+from pipeline import profile_review
 from pipeline.ingest import ingest_document
 from pipeline.llm.transport import ClaudeTransport, call_json
 
@@ -109,3 +110,11 @@ def draft_profile(client_dir: Path, from_docs: Path) -> None:
     else:
         constraints_lines.append("do_not_frame: []")
     constraints_path.write_text("\n".join(constraints_lines) + "\n", encoding="utf-8")
+
+    drafted = parsed.get("brief_defaults") or {}
+    if isinstance(drafted, dict) and (drafted.get("audience") or drafted.get("must_follow")):
+        defaults = profile_review.load_brief_defaults(client_dir)
+        defaults["audience"] = defaults["audience"] or str(drafted.get("audience") or "")
+        defaults["must_follow"] = defaults["must_follow"] or str(drafted.get("must_follow") or "")
+        profile_review.save_brief_defaults(client_dir, defaults)
+    profile_review.add_flags(client_dir, [str(f) for f in parsed.get("review_flags") or []])

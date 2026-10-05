@@ -65,7 +65,8 @@ def generate_field(
 
 def menu_context(brief: Brief, tone: Optional[ToneChoice]) -> str:
     """The brief and tone lines every field prompt shares, so options fit the content type."""
-    lines = [f"Content type: {brief.format}", f"Goal: {brief.goal}", f"Audience: {brief.audience}"]
+    content_type = f"{brief.format} ({brief.format_description})" if brief.format_description else brief.format
+    lines = [f"Content type: {content_type}", f"Goal: {brief.goal}", f"Audience: {brief.audience}"]
     if tone:
         lines.append(f"Tone: {tone.preset_name} — {tone.resolved_style_checklist.get('tone_description', '')}")
     if brief.notes:

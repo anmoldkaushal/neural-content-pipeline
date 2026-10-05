@@ -19,7 +19,7 @@ from typing import Optional
 
 import yaml
 
-from pipeline import config
+from pipeline import config, profile_review
 from pipeline.gates import client_constraints, client_constraints_critic, entailment, microcopy_lint, style_lint, voice_critic
 from pipeline.kb.approved_examples import load_examples
 from pipeline.kb.provenance import ProvenanceError, ensure_verified
@@ -120,6 +120,9 @@ def start(
     record = job_record.new_record(job_id=job_id, client_id=client_id, brief_summary=brief_summary or brief.goal[:160])
     record.format = brief.format
     output_dir = output_root / "jobs" / job_id
+    # Jobs run on an unreviewed profile, but the package says so (see profile_review.py).
+    if unreviewed := profile_review.not_final(client_dir):
+        record.human_touchpoints.append(f"client profile not final: {', '.join(unreviewed)}")
 
     # 1. provenance gate -- hard-blocks before any drafting work starts
     try:
@@ -242,6 +245,8 @@ def execute(
     working_spec["approved_examples"] = load_examples(client_dir, brief.format)
     if brief.notes:
         working_spec["must_follow"] = brief.notes
+    if brief.format_description:
+        working_spec["content_type"] = f"{brief.format}: {brief.format_description}"
     if selected:
         working_spec["microcopy_selected"] = selected  # so the body doesn't repeat or contradict it
     record.stages_run.append("brief_synthesis")
@@ -265,7 +270,7 @@ def execute(
             client_constraints.run(current_draft, profile),
             client_constraints_critic.run(as_read, profile, transport=transport),
             entailment.run(current_draft, kb_entries),
-            voice_critic.run(as_read, profile, transport=transport, tone=chosen_tone),
+            voice_critic.run(as_read, profile, transport=transport, tone=chosen_tone, must_follow=brief.notes),
         ]
         record.gate_results = gate_results
 
@@ -273,14 +278,15 @@ def execute(
         if not failed:
             break
 
-        primary_failure = failed[0]
-        attempts[primary_failure.gate_name] = attempts.get(primary_failure.gate_name, 0) + 1
+        for g in failed:
+            attempts[g.gate_name] = attempts.get(g.gate_name, 0) + 1
         record.retry_count = dict(attempts)
 
-        if not revise.should_retry(primary_failure, attempts[primary_failure.gate_name], effective_retry_budget):
+        exhausted = [g for g in failed if not revise.should_retry(g, attempts[g.gate_name], effective_retry_budget)]
+        if exhausted:
+            primary_failure = exhausted[0]
             _block(output_dir, record, "awaiting_human", [
-                f"gate {primary_failure.gate_name!r} failed after "
-                f"{attempts[primary_failure.gate_name]} attempt(s): {primary_failure.detail}"
+                f"gate {g.gate_name!r} failed after {attempts[g.gate_name]} attempt(s): {g.detail}" for g in exhausted
             ])
             # Persist the failing draft so a human has something to actually review -- a gate
             # failure without the text that failed it is an escalation nobody can act on.
@@ -292,7 +298,8 @@ def execute(
             )
 
         working_spec = dict(working_spec)
-        working_spec["revision_instruction"] = revise.next_revision_instruction(primary_failure)
+        working_spec["revision_instruction"] = revise.next_revision_instruction(failed)
+        working_spec["previous_draft"] = current_draft.body
         revision += 1
 
     # 8. package
@@ -371,7 +378,7 @@ def attach_microcopy(
         as_read = _with_microcopy(Draft(**package_data["draft"]), selected)
         results += [
             client_constraints_critic.run(as_read, profile, transport=transport),
-            voice_critic.run(as_read, profile, transport=transport, tone=session.tone),
+            voice_critic.run(as_read, profile, transport=transport, tone=session.tone, must_follow=session.brief.notes),
         ]
     if any(g.status == GateStatus.FAILED for g in results):
         return results

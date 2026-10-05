@@ -25,6 +25,8 @@ def synthesize(
     )
 
     notes_line = f"Must follow: {brief.notes}\n" if brief.notes else ""
+    if brief.format_description:
+        notes_line = f"Content type ({brief.format}): {brief.format_description}\n" + notes_line
 
     template = _PROMPT_PATH.read_text(encoding="utf-8")
     prompt = (

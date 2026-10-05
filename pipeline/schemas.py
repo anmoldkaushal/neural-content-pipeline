@@ -16,7 +16,8 @@ class Brief(BaseModel):
     client_id: str
     goal: str
     audience: str
-    format: str  # e.g. "blog_post", "email", "social_post", "landing_page"
+    format: str  # e.g. "blog_post", "email", "social_post", "landing_page", or a client's custom type
+    format_description: Optional[str] = None  # what a custom content type is, for the prompts
     target_word_count: Optional[int] = None
     angle_hint: Optional[str] = None
     deadline: Optional[dt.date] = None
@@ -145,6 +146,7 @@ class GateResult(BaseModel):
     status: GateStatus
     detail: str
     flagged_items: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)  # a judged gate's minor, non-blocking notes
 
 
 class JobRecord(BaseModel):

@@ -190,3 +190,50 @@ def test_copy_cannot_be_added_to_an_unfinished_job(roots):
     session = run_job.start("exemplar", _brief(), clients, output, transport=ScriptedTransport())
     with pytest.raises(run_job.JobBlocked):
         run_job.build_microcopy_menu_after(session.job_id, clients, output, transport=ScriptedTransport())
+
+
+class VoiceFailsOnce(ScriptedTransport):
+    """The voice judge blocks the first draft, then passes; records the draft prompts."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.voice_calls = 0
+
+    def call(self, system_prompt: str, user_prompt: str) -> LLMResult:
+        if user_prompt.startswith("You are an independent editorial critic"):
+            self.voice_calls += 1
+            if self.voice_calls == 1:
+                self.prompts.append(user_prompt)
+                return LLMResult(available=True, text=json.dumps(
+                    {"verdict": "off_voice", "notes": [{"severity": "blocking", "note": "opens with a hedge"}]}))
+        return super().call(system_prompt, user_prompt)
+
+
+def test_a_rewrite_edits_the_previous_draft(roots):
+    clients, output = roots
+    transport = VoiceFailsOnce()
+    session = _through_menu(roots, transport)
+    output_dir = run_job.execute(session.job_id, {}, clients, output, transport=transport)
+
+    second = transport.saw("Write the full draft")[1]
+    assert "previous_draft" in second and "opens with a hedge" in second and "The TI-4200 probe" in second
+    assert json.loads((output_dir / "job_record.json").read_text())["retry_count"] == {"voice_critic": 1}
+
+
+def test_a_job_on_an_unreviewed_profile_says_so(roots):
+    clients, output = roots
+    session = run_job.start("exemplar", _brief(), clients, output, transport=ScriptedTransport())
+    record = json.loads((output / "jobs" / session.job_id / "job_record.json").read_text())
+    assert any(n.startswith("client profile not final: Style guide") for n in record["human_touchpoints"])
+
+
+def test_custom_content_type_reaches_the_prompts(roots):
+    clients, output = roots
+    transport = ScriptedTransport()
+    brief = _brief().model_copy(update={"format": "partner_follow_up",
+                                        "format_description": "a threaded reply to an unanswered email"})
+    session = run_job.start("exemplar", brief, clients, output, transport=transport)
+    run_job.choose_angle(session.job_id, 0, tone_select.custom_tone("Dry"), output)
+    run_job.execute(session.job_id, {}, clients, output, transport=transport)
+    assert "a threaded reply to an unanswered email" in transport.saw("You are proposing content angles")[0]
+    assert "a threaded reply to an unanswered email" in transport.saw("Write the full draft")[0]

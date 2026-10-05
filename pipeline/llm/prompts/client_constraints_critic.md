@@ -5,7 +5,12 @@ Each rule below describes a way the draft must not position, imply, or frame thi
 literal word to search for. A rule can be violated without using any specific banned word, by
 paraphrase, by implication, or by structure. Check the draft's actual meaning against each rule.
 
-Respond as a single JSON object: {"verdict": "clean", "notes": []}
-(verdict is "clean" or "violation"; if "violation", notes should be empty in the clean case,
-otherwise short and specific -- name the exact sentence and which rule it breaks, not a vague
-impression).
+Blocking: a sentence a careful reader would take as breaking a rule. Name the sentence and the
+rule it breaks.
+Minor: wording that sits close to a rule but doesn't break it on a fair reading. Name it so a
+human can decide; it does not stop the draft.
+
+Respond as a single JSON object:
+{"verdict": "clean", "notes": [{"severity": "minor", "note": "..."}]}
+verdict is "clean" if there is no blocking note, otherwise "violation". An empty notes list is
+fine when nothing is close.
