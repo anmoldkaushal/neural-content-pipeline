@@ -1,7 +1,7 @@
 """Local UI over the pipeline: `streamlit run ui/app.py`.
 
 Generate walks the three run_job phases with a human choice between each (angle -> micro-copy ->
-draft + gates); Knowledge base and Jobs are views over clients/ and output/jobs/.
+draft + gates; the micro-copy step can be skipped, and copy added to a finished job instead); Knowledge base and Jobs are views over clients/ and output/jobs/.
 Nothing here decides anything the pipeline doesn't -- it only collects choices and shows results."""
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ FACT_STATUS = {"pending": "Needs review", "verified": "Verified", "stale": "Stal
 JOB_STATUS = {"complete": "✅ Complete", "complete_manual_edit": "✅ Complete (hand-edited)",
               "awaiting_human": "🙋 Needs a human", "awaiting_selection": "⏸ Waiting for a choice",
               "failed": "❌ Failed", "in_progress": "… In progress"}
-STEPS = (("brief", "Brief"), ("angle", "Angle"), ("microcopy", "Micro-copy"), ("output", "Draft"))
+STEPS = (("brief", "Brief"), ("angle", "Angle"), ("microcopy", "Micro-copy (optional)"), ("output", "Draft"))
 
 st.set_page_config(page_title="Content Pipeline", layout="wide")
 
@@ -69,7 +69,7 @@ def _compile(client_dir: Path) -> str:
 
 
 def _reset_job() -> None:
-    for key in ("job_id", "step", "tone_choice", "blocked"):
+    for key in ("job_id", "step", "tone_choice", "blocked", "angle_pick"):
         st.session_state.pop(key, None)
 
 
@@ -153,6 +153,75 @@ def _gates(record) -> None:
                 st.caption(f"• {item}")
 
 
+def _microcopy_picker(session: JobSession, key: str) -> dict[str, str]:
+    """One card per micro-copy field: the options (⚠ = the micro-copy gate would reject it) or your own."""
+    selected: dict[str, str] = {}
+    cols = st.columns(2)
+    for n, (field, cands) in enumerate(session.microcopy_menu.items()):
+        with cols[n % 2], st.container(border=True):
+            st.markdown(f"**{field_label(field)}**")
+            if field in session.microcopy_errors:
+                st.caption(f"No options generated: {session.microcopy_errors[field]}")
+            labels = [f"{'⚠ ' if c.flags else ''}{c.text}  :gray[_({c.strategy})_]" for c in cands] + [WRITE_OWN]
+            default = next((i for i, c in enumerate(cands) if not c.flags), len(cands))
+            pick = st.radio(field, range(len(labels)), index=default, format_func=lambda i, l=labels: l[i],
+                            key=f"mc-{key}-{field}", label_visibility="collapsed")
+            if pick == len(cands):
+                selected[field] = st.text_input(f"Your {field_label(field).lower()}", key=f"own-{key}-{field}")
+            else:
+                selected[field] = cands[pick].text
+                for flag in cands[pick].flags:
+                    st.caption(f"⚠ {flag}")
+    return selected
+
+
+def _microcopy_after(job_id: str, where: str, has_copy: bool) -> None:
+    """Micro-copy for a finished job: generate a menu that fits the draft, pick, then the picks are
+    gated and added to the package (nothing changes if a gate fails)."""
+    open_key = f"mcafter-{where}-{job_id}"
+    run_n = st.session_state.get(open_key)
+    if run_n is None:
+        label = "Change micro-copy" if has_copy else "Add micro-copy"
+        if st.button(label, key=f"{where}-mcbtn-{job_id}",
+                     help="Generates options that fit this draft. Your picks are checked before they're added."):
+            with st.spinner("Generating micro-copy options for this draft…"):
+                try:
+                    run_job.build_microcopy_menu_after(job_id, CLIENTS_ROOT, OUTPUT_ROOT)
+                except run_job.JobBlocked as exc:
+                    st.error(str(exc))
+                    return
+            st.session_state[open_key] = st.session_state.get(f"{open_key}-n", 0) + 1
+            st.session_state[f"{open_key}-n"] = st.session_state[open_key]  # fresh widget keys per menu
+            st.rerun()
+        return
+
+    session = run_job.load_session(OUTPUT_ROOT, job_id)
+    with st.container(border=True):
+        st.markdown("**Pick the micro-copy** :gray[· options marked ⚠ would be rejected by the micro-copy gate]")
+        selected = _microcopy_picker(session, f"{where}-{job_id}-{run_n}")
+        empty = [field_label(f).lower() for f, text in selected.items() if not text.strip()]
+        with st.container(horizontal=True, vertical_alignment="center"):
+            add = st.button("Check and add to package", type="primary", disabled=bool(empty),
+                            key=f"{where}-mcadd-{job_id}")
+            if st.button("Cancel", type="tertiary", key=f"{where}-mccancel-{job_id}"):
+                st.session_state.pop(open_key, None)
+                st.rerun()
+            if empty:
+                st.caption(f"To continue: write your {', '.join(empty)}.")
+        if add:
+            with st.spinner("Checking the copy against the gates…"):
+                results = run_job.attach_microcopy(job_id, selected, CLIENTS_ROOT, OUTPUT_ROOT)
+            failed = [g for g in results if g.status.value == "failed"]
+            if failed:
+                for g in failed:
+                    st.error(f"Not added: {g.gate_name} failed: {g.detail}"
+                             + "".join(f"\n- {item}" for item in g.flagged_items))
+            else:
+                st.session_state.pop(open_key, None)
+                st.session_state["flash"] = "Micro-copy checked and added to the package and PDF."
+                st.rerun()
+
+
 def render_output(job_id: str, where: str) -> None:
     """A finished (or blocked) job: copyable text, gate results, downloads. `where` keeps widget
     keys unique when the same job shows on both the Generate and Jobs tabs."""
@@ -184,6 +253,8 @@ def render_output(job_id: str, where: str) -> None:
             st.code(text, language=None, wrap_lines=True)
         st.markdown("**Body**")
         st.code(package["draft"]["body"], language=None, wrap_lines=True)
+        if record.status in stats.COMPLETE_STATUSES and (output_dir / "session.json").exists():
+            _microcopy_after(job_id, where, has_copy=bool(package.get("microcopy_selected")))
         other = {f: c for f, c in (package.get("microcopy") or {}).items() if c}
         if other:
             with st.expander("Other micro-copy options"):
@@ -324,42 +395,50 @@ with tab_generate:
                 st.write(a.pitch)
                 if a.structure:
                     st.caption("\n".join(f"{n}. {s}" for n, s in enumerate(a.structure, 1)))
-                if st.button("Use this angle", key=f"angle-{job_id}-{i}"):
+                picked = st.session_state.get("angle_pick") == i
+                if st.button("✓ Selected" if picked else "Use this angle", key=f"angle-{job_id}-{i}",
+                             type="primary" if picked else "secondary"):
                     chosen_angle = i
-        if st.button("← Edit brief", type="tertiary"):
-            _restore_brief(session)
-            _reset_job()
-            st.rerun()
         if chosen_angle is not None:
+            st.session_state["angle_pick"] = chosen_angle
+            st.rerun()
+        angle_pick = st.session_state.get("angle_pick")
+        with st.container(horizontal=True, vertical_alignment="center"):
+            if st.button("← Edit brief", type="tertiary"):
+                _restore_brief(session)
+                _reset_job()
+                st.rerun()
+            pick_copy = st.button("Choose micro-copy", type="primary", disabled=angle_pick is None,
+                                  help="Subject lines, openers, calls to action and so on, picked before drafting")
+            skip_copy = st.button("Skip micro-copy and write draft", disabled=angle_pick is None,
+                                  help="Drafts the body only. You can add micro-copy to the finished piece.")
+            if angle_pick is None:
+                st.caption("To continue: pick an angle.")
+        if pick_copy:
             with st.spinner("Generating micro-copy options…"):
-                run_job.build_microcopy_menu(job_id, chosen_angle, st.session_state["tone_choice"], CLIENTS_ROOT, OUTPUT_ROOT)
+                run_job.build_microcopy_menu(job_id, angle_pick, st.session_state["tone_choice"], CLIENTS_ROOT, OUTPUT_ROOT)
             st.session_state["step"] = "microcopy"
+            st.rerun()
+        if skip_copy:
+            st.session_state.pop("blocked", None)
+            run_job.choose_angle(job_id, angle_pick, st.session_state["tone_choice"], OUTPUT_ROOT)
+            try:
+                with st.spinner("Drafting and running gates. This is the slow step, usually a minute or more…"):
+                    run_job.execute(job_id, {}, CLIENTS_ROOT, OUTPUT_ROOT)
+            except (run_job.JobBlocked, revise.RetryBudgetExceeded) as exc:
+                st.session_state["blocked"] = str(exc)
+            st.session_state["step"] = "output"
             st.rerun()
 
     elif step == "microcopy":
         st.subheader("Pick the micro-copy")
         st.caption("Options marked ⚠ would be rejected by the micro-copy gate. Pick another or write your own.")
-        selected: dict[str, str] = {}
-        cols = st.columns(2)
-        for n, (field, cands) in enumerate(session.microcopy_menu.items()):
-            with cols[n % 2], st.container(border=True):
-                st.markdown(f"**{field_label(field)}**")
-                if field in session.microcopy_errors:
-                    st.caption(f"No options generated: {session.microcopy_errors[field]}")
-                labels = [f"{'⚠ ' if c.flags else ''}{c.text}  :gray[_({c.strategy})_]" for c in cands] + [WRITE_OWN]
-                default = next((i for i, c in enumerate(cands) if not c.flags), len(cands))
-                pick = st.radio(field, range(len(labels)), index=default, format_func=lambda i, l=labels: l[i],
-                                key=f"mc-{job_id}-{field}", label_visibility="collapsed")
-                if pick == len(cands):
-                    selected[field] = st.text_input(f"Your {field_label(field).lower()}", key=f"own-{job_id}-{field}")
-                else:
-                    selected[field] = cands[pick].text
-                    for flag in cands[pick].flags:
-                        st.caption(f"⚠ {flag}")
+        selected = _microcopy_picker(session, job_id)
         empty = [field_label(f).lower() for f, text in selected.items() if not text.strip()]
         with st.container(horizontal=True, vertical_alignment="center"):
             if st.button("← Back to angles", type="tertiary"):
                 st.session_state["step"] = "angle"
+                st.session_state["angle_pick"] = session.angle_index
                 st.rerun()
             write = st.button("Write draft and run gates", type="primary", disabled=bool(empty))
             if empty:
@@ -617,7 +696,7 @@ def jobs_view(client_id: str) -> None:
                 st.caption("This job started before jobs could be resumed. Start a new piece instead.")
             elif st.button("Resume in Generate", type="primary", key=f"resume-{r.job_id}"):
                 _reset_job()
-                st.session_state.update(job_id=r.job_id, tone_choice=session.tone,
+                st.session_state.update(job_id=r.job_id, tone_choice=session.tone, angle_pick=session.angle_index,
                                         step="microcopy" if session.microcopy_menu else "angle",
                                         flash=f"Resumed job {r.job_id}: open the Generate tab.")
                 st.rerun()

@@ -6,7 +6,10 @@ Three phases so a human can choose between them (the UI calls each; `run` chains
 CLI). Between phases, state lives in output/jobs/<id>/session.json:
   start                -> provenance gate, intake, angle menu
   build_microcopy_menu -> tone + chosen angle -> per-format micro-copy options (before any gate)
-  execute              -> micro-copy gate, synthesis, draft, gates, revise loop, package, PDF"""
+  execute              -> micro-copy gate, synthesis, draft, gates, revise loop, package, PDF
+The micro-copy menu is optional: `choose_angle` records the angle and tone without one, and
+`execute` then drafts with no picked copy. A finished job can get its copy afterwards:
+`build_microcopy_menu_after` -> `attach_microcopy`, held to the same gates."""
 from __future__ import annotations
 
 import json
@@ -20,7 +23,7 @@ from pipeline import config
 from pipeline.gates import client_constraints, client_constraints_critic, entailment, microcopy_lint, style_lint, voice_critic
 from pipeline.kb.approved_examples import load_examples
 from pipeline.kb.provenance import ProvenanceError, ensure_verified
-from pipeline.ledger import job_record
+from pipeline.ledger import job_record, stats
 from pipeline.llm.transport import ClaudeTransport
 from pipeline.output import pdf_export
 from pipeline.schemas import Brief, ClientProfile, Draft, GateResult, GateStatus, JobSession, KBEntry, ToneChoice
@@ -149,6 +152,22 @@ def start(
     return session
 
 
+def choose_angle(job_id: str, angle_index: int, tone: ToneChoice, output_root: Path) -> JobSession:
+    """Records the chosen angle and tone. Enough on its own for `execute`: skipping the micro-copy
+    menu means the draft is written with no picked copy (the micro-copy gate passes on nothing)."""
+    session = load_session(output_root, job_id)
+    output_dir = output_root / "jobs" / job_id
+    record = job_record.load(output_dir)
+    session.angle_index = min(max(angle_index, 0), len(session.angles) - 1)
+    session.tone = tone
+    record.angle = session.angles[session.angle_index]
+    record.tone = tone
+    record.stages_run.append("tone_select")
+    _save_session(output_root, session)
+    job_record.save(output_dir, record)
+    return session
+
+
 def build_microcopy_menu(
     job_id: str,
     angle_index: int,
@@ -157,17 +176,11 @@ def build_microcopy_menu(
     output_root: Path,
     transport: Optional[ClaudeTransport] = None,
 ) -> JobSession:
-    session = load_session(output_root, job_id)
+    session = choose_angle(job_id, angle_index, tone, output_root)
     output_dir = output_root / "jobs" / job_id
     record = job_record.load(output_dir)
     client_dir = clients_root / session.client_id
     profile = _load_client_profile(client_dir)
-
-    session.angle_index = min(max(angle_index, 0), len(session.angles) - 1)
-    session.tone = tone
-    record.angle = session.angles[session.angle_index]
-    record.tone = tone
-    record.stages_run.append("tone_select")
 
     # 4. micro-copy menu -- before any gate runs; each option carries its lint flags
     session.microcopy_menu, session.microcopy_errors = microcopy.generate_all(
@@ -300,6 +313,86 @@ def execute(
     pdf_export.render_package_pdf(final_package, record, profile.company_name, output_dir / "package.pdf")
 
     return output_dir
+
+
+def _finished(output_root: Path, job_id: str) -> tuple[JobSession, dict, Path]:
+    output_dir = output_root / "jobs" / job_id
+    package_path = output_dir / "package.json"
+    if not package_path.exists() or job_record.load(output_dir).status not in stats.COMPLETE_STATUSES:
+        raise JobBlocked("micro-copy can only be added to a completed job")
+    session = load_session(output_root, job_id)
+    if session.angle_index is None or session.tone is None:
+        raise JobBlocked("this job has no recorded angle and tone")
+    return session, json.loads(package_path.read_text(encoding="utf-8")), output_dir
+
+
+def build_microcopy_menu_after(
+    job_id: str,
+    clients_root: Path,
+    output_root: Path,
+    transport: Optional[ClaudeTransport] = None,
+) -> JobSession:
+    """A micro-copy menu for a finished job, written to fit the packaged draft (which may have been
+    hand-edited) rather than only the angle. Leaves the package alone until `attach_microcopy`."""
+    session, package_data, _ = _finished(output_root, job_id)
+    client_dir = clients_root / session.client_id
+    body = package_data["draft"]["body"]
+    session.microcopy_menu, session.microcopy_errors = microcopy.generate_all(
+        session.angles[session.angle_index],
+        transport=transport or ClaudeTransport(),
+        examples=load_examples(client_dir, session.brief.format),
+        format_=session.brief.format,
+        context=microcopy.menu_context(session.brief, session.tone) + f"Finished draft (fit the copy to it):\n{body}\n",
+        profile=_load_client_profile(client_dir),
+    )
+    _save_session(output_root, session)
+    return session
+
+
+def attach_microcopy(
+    job_id: str,
+    microcopy_selected: dict[str, str],
+    clients_root: Path,
+    output_root: Path,
+    transport: Optional[ClaudeTransport] = None,
+) -> list[GateResult]:
+    """Gates copy picked after drafting, then adds it to the package. The body is unchanged, so only
+    the gates that read copy run: the micro-copy lint, then the two judged gates on the draft with
+    the copy on top. Any failure leaves the package as it was (nothing to retry: the copy is the
+    human's pick) and the results come back for the caller to show."""
+    session, package_data, output_dir = _finished(output_root, job_id)
+    record = job_record.load(output_dir)
+    profile = _load_client_profile(clients_root / session.client_id)
+    selected = {k: v.strip() for k, v in microcopy_selected.items() if v and v.strip()}
+
+    results = [microcopy_lint.run(selected, profile)]
+    if results[0].status != GateStatus.FAILED:
+        transport = transport or ClaudeTransport()
+        as_read = _with_microcopy(Draft(**package_data["draft"]), selected)
+        results += [
+            client_constraints_critic.run(as_read, profile, transport=transport),
+            voice_critic.run(as_read, profile, transport=transport, tone=session.tone),
+        ]
+    if any(g.status == GateStatus.FAILED for g in results):
+        return results
+
+    # Replace the earlier results of these gates; the body's other gate results still stand.
+    rerun = {g.gate_name: g for g in results}
+    gate_results = [rerun.pop(g.gate_name, g) for g in record.gate_results] + list(rerun.values())
+    record.gate_results = gate_results
+    record.microcopy_selected = selected
+    record.stages_run.append("microcopy (after draft)")
+    package_data["microcopy_selected"] = selected
+    package_data["microcopy"] = {f: [c.model_dump(mode="json") for c in cands] for f, cands in session.microcopy_menu.items()}
+    package_data["compliance_report"] = {
+        "gates": [g.model_dump(mode="json") for g in gate_results],
+        "all_passed": all(g.status != GateStatus.FAILED for g in gate_results),
+        "any_skipped": any(g.status == GateStatus.SKIPPED for g in gate_results),
+    }
+    package.write_package(output_dir, package_data)
+    job_record.save(output_dir, record)
+    pdf_export.render_package_pdf(package_data, record, profile.company_name, output_dir / "package.pdf")
+    return results
 
 
 def run(

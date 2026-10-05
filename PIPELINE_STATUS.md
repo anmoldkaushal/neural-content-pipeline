@@ -8,7 +8,7 @@
 | Intake | `pipeline/stages/intake.py` | Catches mechanical brief/KB gaps before spending an LLM call. |
 | Angle menu | `pipeline/stages/angle_menu.py` | 2-3 cheap candidates so a bad direction never costs a full draft+gate cycle. |
 | Tone select | `pipeline/stages/tone_select.py` | A dropdown-level decision from the client's pre-approved presets. A human may type a one-off tone (recorded as `ad_hoc` on the job and judged by voice_critic) or ask for one suggestion; it becomes a preset only when a human saves it. |
-| Micro-copy menu | `pipeline/stages/microcopy.py` | Runs after the angle is chosen and before drafting: per-format fields (`formats` in `config/pipeline_config.yaml`), each option pre-flagged by the deterministic lint so the human picks copy the gates will accept. |
+| Micro-copy menu (optional) | `pipeline/stages/microcopy.py` | Runs after the angle is chosen and before drafting: per-format fields (`formats` in `config/pipeline_config.yaml`), each option pre-flagged by the deterministic lint so the human picks copy the gates will accept. Skippable (`choose_angle` then `execute` with no copy); a finished job can get copy afterwards via `build_microcopy_menu_after` -> `attach_microcopy`, which re-runs `microcopy_lint` and the two judged gates on the draft with the copy on top and leaves the package untouched if any fails. |
 | Brief synthesis | `pipeline/stages/brief_synthesis.py` | Compiles one targeted working spec instead of handing the drafter four raw documents. |
 | Draft | `pipeline/stages/draft.py` | The one expensive, single-commit generation pass. |
 | Self-check | `pipeline/stages/self_check.py` | Cheap same-pass reflection before the independent gates run. |
@@ -39,7 +39,7 @@ The orchestrator runs in three phases (`start` -> `build_microcopy_menu` -> `exe
 ## Local UI (v2)
 
 `streamlit run ui/app.py`: pick a client, content type, prompt + pre-filled modifiers and a tone;
-choose an angle, then the micro-copy; read, copy or download (PDF) the result. Knowledge base
+choose an angle, then the micro-copy or skip it; read, copy or download (PDF) the result, and add or change micro-copy on a finished job. Knowledge base
 verifies, deletes (as `rejected`) and adds facts, and compiles uploaded documents; Jobs shows
 history with completion and first-pass rates and retries per gate, and resumes a job left mid-way; New client scaffolds a client.
 

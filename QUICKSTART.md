@@ -58,7 +58,9 @@ streamlit run ui/app.py
 **Generate**: pick a client and content type, write the prompt (audience, word count and
 must-follow notes are pre-filled from that client's last brief of the same type in
 `local_briefs/<client>/`), pick a tone preset or a custom one. Then choose an angle, then the
-micro-copy (options marked ⚠ would fail the micro-copy gate). The result shows with copy buttons
+micro-copy (options marked ⚠ would fail the micro-copy gate), or skip it with "Skip micro-copy and write
+draft". A finished job has "Add micro-copy" (or "Change micro-copy"): options fit the draft, and your
+picks are gated before they join the package and PDF. The result shows with copy buttons
 and a PDF download; "Reuse this brief" refills the form for another run. **Knowledge base**: tick facts and Verify or Delete them (enter your name in
 the sidebar first; it is recorded as `confirmed_by`; a deleted fact can be sent back to review), add a fact you know first-hand, or upload
 documents and compile. Deleted facts are kept as `rejected`, so a later compile won't propose

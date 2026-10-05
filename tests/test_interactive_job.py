@@ -127,3 +127,66 @@ def test_brief_notes_reach_angle_and_synthesis_prompts(roots):
 
     assert "Must follow: Never mention pricing." in transport.saw("You are proposing content angles")[0]
     assert "Must follow: Never mention pricing." in transport.saw("You are compiling a working spec")[0]
+
+
+def test_skipping_the_menu_drafts_with_no_copy(roots):
+    clients, output = roots
+    transport = ScriptedTransport()
+    session = run_job.start("exemplar", _brief(), clients, output, transport=transport)
+    run_job.choose_angle(session.job_id, 0, tone_select.custom_tone("Dry and exact"), output)
+
+    output_dir = run_job.execute(session.job_id, {}, clients, output, transport=transport)
+
+    assert not transport.saw("Generate short-copy candidates")
+    package = json.loads((output_dir / "package.json").read_text())
+    assert package["microcopy_selected"] == {} and package["microcopy"] == {}
+
+
+def _finished_without_copy(roots, transport):
+    clients, output = roots
+    session = run_job.start("exemplar", _brief(), clients, output, transport=transport)
+    run_job.choose_angle(session.job_id, 0, tone_select.custom_tone("Dry and exact"), output)
+    return session.job_id, run_job.execute(session.job_id, {}, clients, output, transport=transport)
+
+
+def test_copy_added_after_drafting_is_gated_and_packaged(roots):
+    clients, output = roots
+    transport = ScriptedTransport()
+    job_id, output_dir = _finished_without_copy(roots, transport)
+
+    session = run_job.build_microcopy_menu_after(job_id, clients, output, transport=transport)
+    assert set(session.microcopy_menu) == {"subject_line", "preheader", "cta"}
+    assert "Finished draft" in transport.saw("Generate short-copy candidates")[-1]
+
+    picks = {"subject_line": "Probe data you can repeat"}
+    results = run_job.attach_microcopy(job_id, picks, clients, output, transport=transport)
+
+    assert [g.gate_name for g in results] == ["microcopy_lint", "client_constraints_critic", "voice_critic"]
+    package = json.loads((output_dir / "package.json").read_text())
+    assert package["microcopy_selected"] == picks
+    assert package["microcopy"]["subject_line"]
+    gate_names = [g["gate_name"] for g in package["compliance_report"]["gates"]]
+    assert len(gate_names) == len(set(gate_names))  # re-run gates replace their earlier results
+    record = json.loads((output_dir / "job_record.json").read_text())
+    assert record["status"] == "complete" and record["microcopy_selected"] == picks
+    assert "subject_line: Probe data you can repeat" in transport.saw("You are an independent editorial critic")[-1]
+
+
+def test_flagged_copy_after_drafting_leaves_the_package_alone(roots):
+    clients, output = roots
+    transport = ScriptedTransport()
+    job_id, output_dir = _finished_without_copy(roots, transport)
+    before = (output_dir / "package.json").read_text()
+
+    results = run_job.attach_microcopy(job_id, {"subject_line": "Leverage the TI-4200"}, clients, output,
+                                       transport=transport)
+
+    assert results[0].status.value == "failed" and len(results) == 1
+    assert (output_dir / "package.json").read_text() == before
+
+
+def test_copy_cannot_be_added_to_an_unfinished_job(roots):
+    clients, output = roots
+    session = run_job.start("exemplar", _brief(), clients, output, transport=ScriptedTransport())
+    with pytest.raises(run_job.JobBlocked):
+        run_job.build_microcopy_menu_after(session.job_id, clients, output, transport=ScriptedTransport())
