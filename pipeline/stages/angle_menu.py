@@ -14,6 +14,8 @@ _PROMPT_PATH = Path(__file__).resolve().parent.parent / "llm" / "prompts" / "ang
 
 def _steering(brief: Brief) -> str:
     lines = []
+    if brief.format_description:
+        lines.append(f"Content type: {brief.format_description}")
     if brief.angle_hint:
         lines.append(f"Angle hint: {brief.angle_hint}")
     if brief.notes:

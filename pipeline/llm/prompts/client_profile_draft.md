@@ -16,5 +16,10 @@ lists (empty if nothing applies):
   These are checked by an independent judge reading the draft's meaning, so write them as full
   sentences describing the rule.
 
+Also draft the brief defaults a writer starts from: `audience` (who the client writes to, in a
+sentence or two) and `must_follow` (the standing instructions every piece must obey, one per line).
+And list `review_flags`: anything in the documents that conflicts or that you had to guess, as one
+sentence each, for the human to resolve. Empty if nothing.
+
 Respond as a single JSON object:
-{"style_guide_summary": "...", "tone_presets": [{"name": "...", "description": "...", "sample_line": "..."}], "do_not_say": [], "do_not_frame": []}
+{"style_guide_summary": "...", "tone_presets": [{"name": "...", "description": "...", "sample_line": "..."}], "do_not_say": [], "do_not_frame": [], "brief_defaults": {"audience": "...", "must_follow": "..."}, "review_flags": []}

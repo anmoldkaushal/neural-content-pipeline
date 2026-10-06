@@ -96,21 +96,27 @@ pip install -e ".[ui]"
 streamlit run ui/app.py
 ```
 
-**Generate**: pick an approved item from the content plan (or none), a client and content type,
-write the prompt (audience, word range and must-follow notes are pre-filled from that client's
-last brief of the same type in `local_briefs/<client>/`, or from the plan item), pick a tone
-preset or a custom one. If preflight finds a problem with the brief, fix it or press Proceed
-anyway. Then choose an angle, then the micro-copy (options marked ⚠ would fail the micro-copy
-gate). The result shows with copy buttons, a PDF download, the revision history, and an Approve
-as a voice example button; an escalated job offers Finish it yourself. **Knowledge base**: review
-the content plan (Approve / Reject), see each source document's role and summary, tick facts and
-Verify or Delete them (enter your name in
-the sidebar first; it is recorded as `confirmed_by`), add a fact you know first-hand, or upload
-documents and compile. Deleted facts are kept as `rejected`, so a later compile won't propose
+**Generate**: pick an approved item from the content plan (or none), a client and content type
+(or "Custom content type…" to name and describe a new one), write the prompt (audience, word range
+and must-follow notes are pre-filled from the client profile's brief defaults, the plan item, or
+that client's last brief of the same type in `local_briefs/<client>/`), pick a tone preset or a
+custom one. If preflight finds a problem with the brief, fix it or press Proceed anyway. Then
+choose an angle, then the micro-copy (options marked ⚠ would fail the micro-copy gate), or choose
+"Skip it, write the body now". A finished job has "Add micro-copy" (or "Change micro-copy"):
+options fit the draft, and your picks are gated before they join the package and PDF. The result
+shows with copy buttons, a PDF download, the revision history, and an Approve as a voice example
+button; an escalated job offers Finish it yourself; "Reuse this brief" refills the form for another
+run. **Knowledge base**: tick facts and Verify or Delete them (enter your name in the sidebar
+first; it is recorded as `confirmed_by`; a deleted fact can be sent back to review), review the
+content plan (Approve / Reject), add a fact you know first-hand, or upload documents and compile.
+Deleted facts are kept as `rejected`, so a later compile won't propose
 them again. Compiling labels every extracted statement; only claims about the client
 enter the review queue. Style rules, audience notes and reference material are set aside with a
-reason (restorable from the tab), and meeting notes or personal details are never stored. **Jobs**: history and success rates per
-client, and Learn from the judges (suggest and adopt rules). **New client**: the same steps as the
+reason (restorable from the tab), and meeting notes or personal details are never stored. **Jobs**:
+history and success rates per client; click a row to open a job, or resume one left at the angle
+or micro-copy step; Learn from the judges (suggest and adopt rules). **Client profile** (under
+Knowledge base): edit each section in place and mark it Reviewed or Final, and see each source
+document's role and summary; jobs on a non-final profile say so in their notes. **New client**: the same steps as the
 CLI below (scaffold, draft profile from documents, compile), then review in Knowledge base.
 
 ## Picking an angle or tone from the CLI

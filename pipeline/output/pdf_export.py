@@ -130,6 +130,8 @@ def render_package_pdf(
             status = str(gate.get("status", "")).lower()
             line = f"{gate.get('gate_name', '?')}: {status.upper()} -- {_escape(str(gate.get('detail', '')))}"
             story.append(Paragraph(line, style_by_status.get(status, styles["body"])))
+            for note in gate.get("notes") or []:
+                story.append(Paragraph(f"&bull; minor: {_escape(str(note))}", styles["note"]))
 
     if record.human_touchpoints:
         story.append(Paragraph("Notes for human review", styles["h2"]))

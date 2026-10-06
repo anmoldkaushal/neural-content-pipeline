@@ -71,7 +71,8 @@ def menu_context(
 ) -> str:
     """The brief, tone, plan item and framing rules every field prompt shares, so options fit the
     content type and don't frame the piece in a way the judged gates will reject."""
-    lines = [f"Content type: {brief.format}", f"Goal: {brief.goal}", f"Audience: {brief.audience}"]
+    content_type = f"{brief.format} ({brief.format_description})" if brief.format_description else brief.format
+    lines = [f"Content type: {content_type}", f"Goal: {brief.goal}", f"Audience: {brief.audience}"]
     if tone:
         lines.append(f"Tone: {tone.preset_name} — {tone.resolved_style_checklist.get('tone_description', '')}")
     if brief.notes:

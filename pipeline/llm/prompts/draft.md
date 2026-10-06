@@ -13,6 +13,9 @@ Write the full draft described by the working spec below, for the client whose r
   keyword naturally.
 - If "known_conflicts" is present, a human chose to proceed past a clash between the brief and
   the client's rules: the client's rules win.
+- Write the body only: no subject line, preheader or title (those are picked separately as
+  micro-copy). Leave no template text or bracketed placeholders. If the greeting needs the
+  recipient's name, use the merge field {{first_name}}.
 
 Respond as a single JSON object: {"body": "the full draft text", "claims_used": ["kb-id-1"]}
 (claims_used is every verified fact id the body actually relies on).

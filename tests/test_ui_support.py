@@ -85,3 +85,9 @@ def test_custom_tone_is_marked_ad_hoc_and_needs_a_description():
     assert tone_select.custom_tone("dry and exact").ad_hoc is True
     with pytest.raises(ValueError):
         tone_select.custom_tone("  ")
+
+
+def test_a_hand_finished_package_counts_as_complete():
+    s = stats.summarize([_rec("a", "complete"), _rec("b", "complete_manual_edit"), _rec("c", "awaiting_human")])
+    assert s["complete"] == 2
+    assert s["completion_rate"] == pytest.approx(2 / 3)

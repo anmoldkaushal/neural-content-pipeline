@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+from pipeline.gates import judged
 from pipeline.llm.transport import ClaudeTransport, call_json
 from pipeline.schemas import ClientProfile, Draft, GateResult, GateStatus
 
@@ -27,6 +28,7 @@ def run(
         f"{template}\n\n"
         f"Client: {profile.company_name} ({profile.industry})\n\n"
         f"Framing rules this draft must not violate:\n{rules_block}\n\n"
+        f"{judged.SEVERITY_FORMAT}\n\n"
         f"--- DRAFT ---\n{draft.body}\n--- END DRAFT ---"
     )
 
@@ -38,14 +40,6 @@ def run(
             detail=f"judge unavailable: {result.error or 'no error detail'}",
         )
 
-    verdict = parsed.get("verdict") if isinstance(parsed, dict) else None
-    notes = parsed.get("notes", []) if isinstance(parsed, dict) else []
-
-    if verdict == "clean":
-        return GateResult(gate_name="client_constraints_critic", status=GateStatus.PASSED, detail="clean")
-    return GateResult(
-        gate_name="client_constraints_critic",
-        status=GateStatus.FAILED,
-        detail="judge flagged a framing violation",
-        flagged_items=list(notes),
-    )
+    if not isinstance(parsed, dict):
+        parsed = {"verdict": None, "notes": []}
+    return judged.verdict("client_constraints_critic", parsed, "clean", "clean", "judge flagged a framing violation")

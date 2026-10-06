@@ -9,7 +9,7 @@
 | Intake | `pipeline/stages/intake.py` | Catches mechanical brief/KB gaps (and an unapproved plan item) before spending an LLM call. |
 | Angle menu | `pipeline/stages/angle_menu.py` | 2-3 cheap candidates so a bad direction never costs a full draft+gate cycle. Sees the content plan item and the most relevant client context. |
 | Tone select | `pipeline/stages/tone_select.py` | A dropdown-level decision from the client's pre-approved presets. A human may type a one-off tone (recorded as `ad_hoc` on the job and judged by voice_critic) or ask for one suggestion; it becomes a preset only when a human saves it. |
-| Micro-copy menu | `pipeline/stages/microcopy.py` | Runs after the angle is chosen and before drafting: per-format fields (`formats` in `config/pipeline_config.yaml`), each option pre-flagged by the deterministic lint so the human picks copy the gates will accept. |
+| Micro-copy menu (optional) | `pipeline/stages/microcopy.py` | Runs after the angle is chosen and before drafting: per-format fields (`formats` in `config/pipeline_config.yaml`), each option pre-flagged by the deterministic lint so the human picks copy the gates will accept. Skippable (`choose_angle` then `execute` with no copy); a finished job can get copy afterwards via `build_microcopy_menu_after` -> `attach_microcopy`, which re-runs `microcopy_lint` and the two judged gates on the draft with the copy on top and leaves the package untouched if any fails. |
 | Brief synthesis | `pipeline/stages/brief_synthesis.py` | Compiles one targeted working spec instead of handing the drafter four raw documents. |
 | Draft | `pipeline/stages/draft.py` | The one full generation pass. The writer gets everything it will be judged on first: the client's rules (`pipeline/kb/rulebook.py`: style guide, tone, banned lists, do-not-say, framing rules, word range), verified facts with their text, the plan item, relevant context, and approved or past examples for voice. |
 | Gates (style/constraints/entailment/claims/voice) | `pipeline/gates/` | Independent passes -- never the same call that wrote the draft, to avoid self-grading bias. |
@@ -42,7 +42,12 @@ The orchestrator runs in three phases (`start` -> `build_microcopy_menu` -> `exe
   stage, whose findings were computed and discarded. SKIPPED, never PASSED, if the transport is down.
 - **`voice_critic`** -- LLM judge, independent call, given the same style guide and full tone
   descriptions the writer got (it used to see preset names only). Reports SKIPPED (never PASSED)
-  if the transport is unavailable -- same discipline as `llm_judge.py`.
+  if the transport is unavailable -- same discipline as `llm_judge.py`. Judged within the client's
+  framing rules and the brief's must-follow, so it can't demand what those forbid.
+- **Both judged gates** (`voice_critic`, `client_constraints_critic`) mark each note blocking or
+  minor (`pipeline/gates/judged.py`); only a blocking note fails, minor notes ride on the result for
+  the human. A note with no severity counts as blocking. A failed revise round gets every failing
+  gate's notes plus what earlier rounds were told, and edits the previous draft (`revise.md`).
 
 ## The knowledge layers a writer reads
 
@@ -68,15 +73,25 @@ framing or banned-phrase additions; a human adopts each one, additively. Approvi
 hand-finished job as a voice example (CLI `approve`, or the button on the result) feeds future
 drafts of that format.
 
+## Client profile review
+
+`pipeline/profile_review.py`: the drafted profile is reviewed per section (style guide, tone
+presets, banned words, framing rules, brief defaults), Draft -> Reviewed -> Final, in
+`clients/<id>/profile_review.json`. Final locks a section; an edit outside the app steps it back
+down. Jobs run on a non-final profile, but the job notes and PDF say which sections aren't final.
+Brief defaults (`brief_defaults.yaml`: audience, must-follow, per-content-type overrides including
+a word range, custom content types) pre-fill the brief form.
+
 ## Local UI (v2)
 
-`streamlit run ui/app.py`: pick a content plan item (or none), client, content type, prompt +
-pre-filled modifiers (word range) and a tone; resolve any preflight problem; choose an angle, then
-the micro-copy; read, copy or download (PDF) the result, see its revision rounds, approve it as a
-voice example, or finish an escalated draft by hand. Knowledge base reviews the content plan,
-shows each document's role and summary, verifies, deletes (as `rejected`) and adds facts, and
-compiles uploaded documents; Jobs shows history with completion and first-pass rates, retries per
-gate, and rule suggestions from judge notes; New client scaffolds a client.
+`streamlit run ui/app.py`: pick a content plan item (or none), client, content type (or a custom
+one), prompt + pre-filled modifiers (word range) and a tone; resolve any preflight problem; choose
+an angle, then the micro-copy or skip it; read, copy or download (PDF) the result, add or change
+micro-copy on a finished job, see its revision rounds, approve it as a voice example, or finish an
+escalated draft by hand. Knowledge base reviews facts, set-aside statements and the content plan,
+adds facts, compiles uploaded documents, and edits the client profile; Jobs shows history with
+completion and first-pass rates, retries per gate, rule suggestions from judge notes, and resumes a
+job left mid-way; New client scaffolds a client.
 
 ## Deferred (and why)
 

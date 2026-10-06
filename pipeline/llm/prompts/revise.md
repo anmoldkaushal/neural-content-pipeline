@@ -8,6 +8,8 @@ findings from every check that failed, and the client's rules. Edit the draft; d
 - Still follow every client rule and land inside the word range. If a fix removes length, add
   substance from the verified facts or the context's direction, not filler.
 - State facts about the client only from VERIFIED FACTS; client context is direction, not fact.
+- Write the body only, with no template text or bracketed placeholders; a greeting that needs the
+  recipient's name uses the merge field {{first_name}}.
 
 Respond as a single JSON object:
 {"body": "the full revised draft", "claims_used": ["kb-id-1"], "change_notes": ["one line per fix: what you changed and which finding it answers"]}

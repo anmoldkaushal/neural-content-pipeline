@@ -10,6 +10,8 @@ This module holds only the pure decision logic (should we retry, what to tell th
 loop lives in run_job.py, keeping this unit-testable in isolation."""
 from __future__ import annotations
 
+from typing import Union
+
 from pipeline.schemas import GateResult, GateStatus
 
 # What each gate checks, in words the writer can act on.

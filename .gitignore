@@ -12,12 +12,12 @@ output/*
 # Working briefs for real clients -- not the versioned test fixtures, never committed.
 local_briefs/
 
-# Real client source docs never enter git; the synthetic exemplar and the blank template are the
-# exceptions (their contents are safe/empty by construction).
-clients/*/knowledge_base/documents/*
-!clients/exemplar/knowledge_base/documents/*
-!clients/_template/knowledge_base/documents/*
-!clients/*/knowledge_base/documents/.gitkeep
+# Real clients never enter git (their facts, rules and documents are client material); the
+# synthetic exemplar and the blank template are the exceptions (safe/empty by construction).
+clients/*
+!clients/exemplar/
+!clients/_template/
+clients/*/profile_review.json
 
 # Derived from those documents (readable context sections, planned pieces): same rule. The
 # exemplar's plan is hand-written synthetic data.
@@ -27,3 +27,6 @@ clients/*/content_plan.yaml
 
 # macOS Finder metadata
 .DS_Store
+
+# Claude Code local state (worktrees, settings)
+.claude/

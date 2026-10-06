@@ -168,8 +168,8 @@
       <h1>How a piece of client copy gets made</h1>
     </div>
     <div class="meta">
-      Sheet 1 of 1 &middot; Rev. 3 (V2)<br>
-      Updated 2026-09-28<br>
+      Sheet 1 of 1 &middot; Rev. 5 (V2.2)<br>
+      Updated 2026-10-05<br>
       For: non-technical review
     </div>
   </div>
@@ -192,23 +192,29 @@
     <div class="tabs">
       <div class="tab">
         <span class="label">Generate</span>
-        <p>Write the prompt, pick the content type and tone, choose an angle, then choose the short copy.
-          The finished piece appears with copy buttons and a PDF download.</p>
+        <p>A step bar shows where you are: brief, angle, short copy (optional), draft. Pick an angle, then
+          choose the short copy or skip straight to the draft. Go back to edit the brief without losing what
+          you typed. The finished piece sits beside its check results, copy buttons and a PDF download, with
+          a button to add or change its short copy, and "Reuse this brief" starts the
+          next one from the same brief.</p>
       </div>
       <div class="tab">
         <span class="label">Knowledge base</span>
-        <p>See what needs review, verify or delete facts in bulk, add a fact you learned first-hand, or
-          upload new documents. Material that isn't a claim about the client is set aside with a reason.</p>
+        <p>Four sub-tabs: facts to review, set-aside material, adding facts or documents, and the client
+          profile. Verify or delete facts in bulk (delete asks first), and send a deleted or set-aside item
+          back for review. Uploads warn before replacing a document with the same name.</p>
       </div>
       <div class="tab">
         <span class="label">Jobs</span>
         <p>Every piece run for this client: how many finished, how many passed first time, and which check
-          sends drafts back most often. Open any past job to read or download it.</p>
+          sends drafts back most often. Click a row to open a past job, or resume one that was left at the
+          angle or short-copy step.</p>
       </div>
       <div class="tab">
         <span class="label">New client</span>
         <p>Name the client, upload their documents, and the system drafts a style guide, tones and
-          banned-word lists (marked DRAFT for you to review) and extracts their facts.</p>
+          banned-word lists (marked DRAFT for you to review) and extracts their facts. If a drafting step
+          fails, the client is still created and you're told what to finish by hand.</p>
       </div>
     </div>
   </section>
@@ -219,7 +225,7 @@
       steps in the middle are yours; everything else runs by itself unless something needs a human.</p>
 
     <figure>
-      <svg viewBox="0 0 420 1185" role="img" aria-label="Flow diagram. A brief from the app passes a readiness check, which can stop the job. The system drafts 2 to 3 angles and you pick one. It then generates a micro-copy menu fitted to the content type, and you pick or write the copy. The picked copy is checked; if it breaks a rule the job stops for you to pick again. The brief is compiled into a writer's spec, the draft is written, and five independent checks run, with up to two automatic rewrites before the job stops and names the failing check. The result is packaged, shown in the app with copy buttons and a PDF, and a human can approve it so future jobs use it as a voice example.">
+      <svg viewBox="0 0 420 1185" role="img" aria-label="Flow diagram. A brief from the app passes a readiness check, which can stop the job. The system drafts 2 to 3 angles and you pick one. It then generates a micro-copy menu fitted to the content type, and you pick or write the copy. The picked copy is checked; if it breaks a rule the job stops for you to pick again. The brief is compiled into a writer's spec, the draft is written, and five independent checks run, with up to two automatic rewrites before the job stops and names the failing check. The result is packaged, shown in the app with copy buttons and a PDF, and a human can approve it so future jobs use it as a voice example. Picking micro-copy is optional: you can skip from the angle straight to the writer's spec, and add micro-copy to the finished piece later.">
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/>
@@ -252,7 +258,7 @@
           <line x1="170" y1="288" x2="170" y2="312" stroke-width="1.6" marker-end="url(#arrow)"/>
 
           <rect x="50" y="312" width="240" height="58" rx="3" stroke-width="1.6"/>
-          <text x="170" y="332" text-anchor="middle" font-size="12.5" fill="currentColor" stroke="none">Micro-copy menu</text>
+          <text x="170" y="332" text-anchor="middle" font-size="12.5" fill="currentColor" stroke="none">Micro-copy menu (optional)</text>
           <text x="170" y="348" text-anchor="middle" font-size="10" fill="currentColor" stroke="none" opacity="0.75">fields fit the content type</text>
           <text x="170" y="362" text-anchor="middle" font-size="9.5" fill="currentColor" stroke="none" opacity="0.6">options that break a rule are flagged</text>
           <line x1="170" y1="370" x2="170" y2="394" stroke-width="1.6" stroke="var(--manual)" marker-end="url(#arrow)"/>
@@ -273,6 +279,8 @@
 
           <rect x="50" y="526" width="240" height="40" rx="3" stroke-width="1.6"/>
           <text x="170" y="551" text-anchor="middle" font-size="11.5" fill="currentColor" stroke="none">Compiled into one writer's spec</text>
+          <path d="M50,268 H22 V546 H48" stroke-width="1.4" stroke="var(--manual)" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+          <text x="15" y="407" text-anchor="middle" font-size="9.5" fill="var(--manual)" stroke="none" transform="rotate(-90 15 407)">or skip micro-copy</text>
           <line x1="170" y1="566" x2="170" y2="590" stroke-width="1.6" marker-end="url(#arrow)"/>
 
           <rect x="50" y="590" width="240" height="50" rx="3" stroke-width="1.6"/>
@@ -327,7 +335,8 @@
       </svg>
       <figcaption>
         The line down the middle runs by itself except for the two purple steps, which are your choices in
-        the app. The amber loop is an automatic rewrite, up to two tries per check. The three red boxes are
+        the app. The dashed purple line on the left is the skip: go from the angle straight to the draft,
+        and add micro-copy to the finished piece later if you want it. The amber loop is an automatic rewrite, up to two tries per check. The three red boxes are
         the only places the system stops and waits for a person. Approving a finished piece (bottom) is a
         deliberate human step that teaches future jobs the client's voice.
       </figcaption>
@@ -385,11 +394,12 @@
       <div class="stage you">
         <div class="num">05</div>
         <div>
-          <h3>Micro-copy menu <span class="pill you">You choose</span></h3>
+          <h3>Micro-copy menu <span class="pill you">Optional</span></h3>
           <p>Several options for each short piece of copy the content type needs: subject line, preheader
             and call to action for an email; opener and call to action for a LinkedIn message; title,
             subtitle, hook and call to action for a blog post. Any option that would break a word rule is
-            flagged. Pick one per field or write your own.</p>
+            flagged. Pick one per field or write your own. Or skip it: the draft is written without short
+            copy, and you can add some to the finished piece (step 09).</p>
         </div>
       </div>
       <div class="stage">
@@ -420,7 +430,9 @@
         <div>
           <h3>Package &amp; show</h3>
           <p>Bundles the picked copy, the draft, the other options and a compliance report. The app shows
-            each piece of text with a copy button, the result of every check, and a PDF to download.</p>
+            each piece of text with a copy button, the result of every check, and a PDF to download. A
+            finished piece can get its short copy here instead: options are written to fit the draft, and
+            your picks go through the copy checks before they join the package and PDF.</p>
         </div>
       </div>
       <div class="stage you">
@@ -444,6 +456,12 @@
       <div class="gate"><span class="dot" style="background:var(--ink-soft)"></span>
         <div><b>Picked copy</b>: the subject lines, openers and calls to action you chose, against the house
           banned-word list, stray dashes and this client's banned terms. Plain rules, zero tolerance.</div></div>
+
+      <div class="gate-when">Copy added to a finished piece</div>
+      <div class="gate"><span class="dot" style="background:var(--accent)"></span>
+        <div><b>Same copy checks, after the fact</b>: the picked-copy rules above, then both AI reviewers
+          (banned framing, on-brand tone) read the finished draft with the new copy on top. The body is
+          unchanged, so its other checks still stand. If anything fails, the package stays as it was.</div></div>
 
       <div class="gate-when">On the draft</div>
       <div class="gate"><span class="dot" style="background:var(--ink-soft)"></span>
@@ -471,6 +489,7 @@
       <strong>If a draft check fails,</strong> the draft goes back for a rewrite that is told exactly what to
       fix, up to two tries per check. If it fails a third time, the system stops and shows you the draft and
       the exact reason. If the picked copy fails, nothing is drafted: you pick different copy and run again.
+      Copy added to a finished piece that fails a check is simply not added; pick again.
     </div>
   </section>
 
@@ -495,7 +514,7 @@
       items stay on file with the reason shown, and can be sent back for review.</p>
 
     <figure>
-      <svg viewBox="0 0 420 330" role="img" aria-label="Flow diagram: source documents are read by AI into pending facts, a human confirms them into verified facts, and only verified facts are usable in a draft; unconfirmed facts are blocked. A human can confirm a fact directly without a document, or mark an old fact stale by superseding it. A human can also delete a fact, which keeps it as rejected so it is never re-added.">
+      <svg viewBox="0 0 420 330" role="img" aria-label="Flow diagram: source documents are read by AI into pending facts, a human confirms them into verified facts, and only verified facts are usable in a draft; unconfirmed facts are blocked. A human can confirm a fact directly without a document, or mark an old fact stale by superseding it. A human can also delete a fact, which keeps it as rejected so it is never re-added, and can send it back for review as a pending claim.">
         <defs>
           <marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/>
@@ -541,15 +560,96 @@
           <rect x="150" y="270" width="156" height="46" rx="3" stroke-width="1.4" stroke="var(--stop)" stroke-dasharray="3 3"/>
           <text x="228" y="290" text-anchor="middle" stroke="none" fill="var(--stop)">Deleted</text>
           <text x="228" y="304" text-anchor="middle" stroke="none" fill="var(--stop)" opacity="0.85" font-size="9">kept, so never re-added</text>
+          <path d="M150,300 H4 V7 H228 V14" stroke-width="1.3" stroke="var(--manual)" stroke-dasharray="4 3" marker-end="url(#arrow2)"/>
+          <text x="78" y="314" text-anchor="middle" stroke="none" font-size="8.5" fill="var(--manual)">send back for review</text>
         </g>
       </svg>
       <figcaption>
         A claim becomes usable only once a person confirms it. In the Knowledge base tab you can verify or
         delete claims in bulk, add one you learned on a call, and upload new documents. A deleted claim is
         kept on file as rejected, so re-reading the same documents never proposes it again. Deleting a claim
-        that was verified also withdraws its confirmation.
+        that was verified also withdraws its confirmation. If you change your mind, send it back: it returns
+        as a pending claim and has to be verified again before a draft can use it.
       </figcaption>
     </figure>
+  </section>
+
+  <section>
+    <h2>What changed in Rev. 5</h2>
+    <p class="section-sub">Built and tested 2026-10-05. The checks and fact rules are unchanged; the short
+      copy step moved from required to optional.</p>
+
+    <div class="added-list">
+      <div class="added-card">
+        <span class="pill">Changed</span>
+        <h3>Micro-copy is optional</h3>
+        <p>After picking an angle, choose "Choose micro-copy" as before, or "Skip micro-copy and write
+          draft" to go straight to the body. Useful when the short copy will be written elsewhere or later.</p>
+      </div>
+      <div class="added-card">
+        <span class="pill">Added</span>
+        <h3>Add micro-copy to a finished piece</h3>
+        <p>Every finished job, in Generate or Jobs, has an "Add micro-copy" (or "Change micro-copy") button.
+          The options are written to fit the finished draft, including one edited by hand.</p>
+      </div>
+      <div class="added-card">
+        <span class="pill">Added</span>
+        <h3>Late copy is still checked</h3>
+        <p>Copy added afterwards meets the same banned-word rules and both AI reviewers, reading it on top of
+          the draft. It joins the package and PDF only if every check passes.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What changed in Rev. 4</h2>
+    <p class="section-sub">Fixes and app improvements from 2026-10-02. The production line itself, its checks
+      and the fact rules are unchanged.</p>
+
+    <div class="added-list">
+      <div class="added-card fix">
+        <span class="pill">Fixed</span>
+        <h3>The Jobs tab no longer crashes after a run</h3>
+        <p>After every successful run the Jobs tab failed to load. It now opens normally.</p>
+      </div>
+      <div class="added-card fix">
+        <span class="pill">Fixed</span>
+        <h3>"Stopped for a human" stays on screen</h3>
+        <p>When a job stopped, the reason disappeared as soon as you clicked anything. It now stays until you
+          move on.</p>
+      </div>
+      <div class="added-card fix">
+        <span class="pill">Fixed</span>
+        <h3>Hand-finished pieces count as finished</h3>
+        <p>A piece a person finished by editing it was left out of the completion rate, so the rate read low.
+          It now counts.</p>
+      </div>
+      <div class="added-card fix">
+        <span class="pill">Fixed</span>
+        <h3>A failed setup step no longer blocks a retry</h3>
+        <p>If drafting the profile or reading documents failed while adding a client, the half-made client
+          blocked trying again. Now the client is kept and the app says what to finish by hand.</p>
+      </div>
+      <div class="added-card">
+        <span class="pill">Added</span>
+        <h3>Resume a job left mid-way</h3>
+        <p>A job paused at the angle or short-copy choice can be picked up again from the Jobs tab, with the
+          tone you chose still attached.</p>
+      </div>
+      <div class="added-card">
+        <span class="pill">Added</span>
+        <h3>Undo a delete</h3>
+        <p>A deleted fact can be sent back for review. It comes back unconfirmed, so it can't reach a draft
+          until someone verifies it again.</p>
+      </div>
+      <div class="added-card">
+        <span class="pill">Improved</span>
+        <h3>An easier app to work in</h3>
+        <p>A step bar, one-click angle and copy cards, a two-column brief form, the result shown beside its
+          checks, "Edit brief" and "Reuse this brief" that keep what you typed, and buttons that say what's
+          missing when they're greyed out.</p>
+      </div>
+    </div>
   </section>
 
   <section>

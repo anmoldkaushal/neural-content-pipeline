@@ -133,10 +133,11 @@ def exclude(client_dir: Path, reasons: dict[str, tuple[str, str]], only_pending:
 
 
 def restore(client_dir: Path, entry_ids: list[str]) -> list[KBEntry]:
-    """Puts excluded entries back in the review queue as client claims."""
+    """Puts excluded or rejected entries back in the review queue as client claims. A rejected fact
+    already left provenance.json, so it comes back as pending and needs verifying again."""
     entries = _load(client_dir)
     for e in entries:
-        if e.id in set(entry_ids) and e.status == "excluded":
+        if e.id in set(entry_ids) and e.status in ("excluded", "rejected"):
             e.status, e.kind, e.exclusion_reason = "pending", "claim", None
     _save(client_dir, entries)
     return entries
