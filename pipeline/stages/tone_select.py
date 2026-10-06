@@ -52,7 +52,9 @@ def suggest_tone(
     prompt = (
         f"{_SUGGEST_PROMPT_PATH.read_text(encoding='utf-8')}\n\n"
         f"Client: {profile.company_name} ({profile.industry})\n"
-        f"Content type: {brief.format}\nGoal: {brief.goal}\nAudience: {brief.audience}\n\n"
+        f"Content type: {brief.format}\nGoal: {brief.goal}\nAudience: {brief.audience}\n"
+        + (f"{brief.icp_profile}\n" if brief.icp_profile else "")
+        + "\n"
         f"Existing presets:\n{existing}"
     )
     parsed, result = call_json(transport, system_prompt="", user_prompt=prompt)

@@ -22,11 +22,14 @@ from typing import Any, Optional
 
 import yaml
 
+from pipeline import icps
+
 DRAFT_HEADER = "# DRAFT — agent-generated, review before use"
 STATUSES = ("draft", "reviewed", "final")
 SECTIONS = {
     "style_guide": "Style guide",
     "tone_presets": "Tone presets",
+    "icps": "ICPs",
     "banned_words": "Banned words",
     "framing_rules": "Framing rules",
     "brief_defaults": "Brief defaults",
@@ -61,6 +64,12 @@ def section_content(client_dir: Path, section: str) -> Any:
         return _style_guide_body(client_dir)
     if section == "tone_presets":
         return _yaml(client_dir / "tone_presets.yaml").get("presets") or []
+    if section == "icps":
+        raw = _yaml(client_dir / icps.FILE).get("icps") or []
+        try:
+            return icps.normalize(raw)
+        except ValueError:  # a duplicate name typed in by hand: show it as is, saving will refuse it
+            return raw
     if section == "banned_words":
         client = _yaml(client_dir / "client.yaml")
         return {
@@ -139,6 +148,7 @@ def _sync_draft_headers(client_dir: Path) -> None:
     current = status(client_dir)
     final = {s for s, v in current.items() if v["status"] == "final"}
     for name, sections in (("tone_presets.yaml", {"tone_presets"}),
+                           (icps.FILE, {"icps"}),
                            ("constraints.yaml", {"banned_words", "framing_rules"})):
         path = client_dir / name
         if not path.exists():
@@ -219,6 +229,13 @@ def save_section(client_dir: Path, section: str, content: Any) -> None:
         presets = [{"name": p["name"].strip(), "description": (p.get("description") or "").strip(),
                     "sample_line": (p.get("sample_line") or "").strip()} for p in content if (p.get("name") or "").strip()]
         _write_yaml(client_dir / "tone_presets.yaml", {"presets": presets}, draft=True)
+    elif section == "icps":
+        cleaned = icps.normalize(content)
+        tones = {p.get("name") for p in section_content(client_dir, "tone_presets")}
+        for icp in cleaned:
+            if icp.get("default_tone") and icp["default_tone"] not in tones:
+                raise ValueError(f"ICP {icp['name']!r}: default tone {icp['default_tone']!r} is not a tone preset")
+        _write_yaml(client_dir / icps.FILE, {"icps": cleaned}, draft=True)
     elif section in ("banned_words", "framing_rules"):
         constraints = _yaml(client_dir / "constraints.yaml")
         if section == "framing_rules":

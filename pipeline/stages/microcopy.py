@@ -77,6 +77,8 @@ def menu_context(
         lines.append(f"Tone: {tone.preset_name} — {tone.resolved_style_checklist.get('tone_description', '')}")
     if brief.notes:
         lines.append(f"Must follow: {brief.notes}")
+    if brief.icp_profile:
+        lines.append(brief.icp_profile)
     if profile is not None and profile.do_not_frame:
         lines.append("Client framing rules (never break):")
         lines += [f"- {rule}" for rule in profile.do_not_frame]

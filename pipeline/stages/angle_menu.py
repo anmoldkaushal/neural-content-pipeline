@@ -20,6 +20,8 @@ def _steering(brief: Brief) -> str:
         lines.append(f"Angle hint: {brief.angle_hint}")
     if brief.notes:
         lines.append(f"Must follow: {brief.notes}")
+    if brief.icp_profile:
+        lines.append(brief.icp_profile)
     return "".join(line + "\n" for line in lines)
 
 

@@ -1,0 +1,19 @@
+icps:
+  - name: plant_quality_manager
+    summary: "Runs quality assurance at a mid-size discrete manufacturer and owns the scrap and rework numbers."
+    roles: ["Quality manager", "QA lead"]
+    company: "50-500 staff, ISO 9001 certified, in-house metrology lab"
+    pains:
+      - "Inspectors re-measure parts by hand when results drift"
+      - "Audit findings on measurement traceability"
+    cares_about: ["Repeatability", "An audit trail per part"]
+    objections: ["Downtime to install and recalibrate"]
+    default_tone: technical_precise
+  - name: procurement_lead
+    summary: "Buys capital test equipment for a manufacturing group and answers for lead time and total cost."
+    roles: ["Procurement manager", "Category buyer"]
+    company: "Multi-site manufacturer with a central purchasing team"
+    pains: ["Long, uncertain lead times on capital equipment"]
+    cares_about: ["Total cost of ownership", "Support and service terms"]
+    objections: ["Switching cost from the incumbent vendor"]
+    default_tone: procurement_focused

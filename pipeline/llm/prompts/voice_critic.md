@@ -14,8 +14,9 @@ Blocking (the piece should not go to a reader like this):
 - leftover template text or bracketed placeholders, other than a single first-name merge field
   in the greeting such as {{first_name}}
 - a claim stated as fact with nothing behind it, or a superlative the draft can't support
-- writing that plainly misses the style guide, the chosen tone or the content type (a pitch where
-  a soft follow-up was asked for, a wall of features where one example was asked for)
+- writing that plainly misses the style guide, the chosen tone, the content type or the reader
+  profile when one is given (a pitch where a soft follow-up was asked for, a wall of features where
+  one example was asked for, engineering detail for a buyer who cares about lead time)
 - generic AI patterns a reader would notice at once: stacked hedges, empty transitions, the same
   sentence shape repeated through the piece
 

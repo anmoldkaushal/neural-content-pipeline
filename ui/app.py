@@ -17,7 +17,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from pipeline import brief_defaults, client_setup, config, profile_review, run_job  # noqa: E402
+from pipeline import brief_defaults, client_setup, config, icps, profile_review, run_job  # noqa: E402
 from pipeline.kb import approved_examples, content_plan, context  # noqa: E402
 from pipeline.kb.provenance import ProvenanceError, verify_client  # noqa: E402
 from pipeline.ledger import job_record, lessons, stats  # noqa: E402
@@ -30,6 +30,7 @@ CLIENTS_ROOT = REPO_ROOT / "clients"
 OUTPUT_ROOT = REPO_ROOT / "output"
 BRIEFS_ROOT = REPO_ROOT / "local_briefs"
 CUSTOM_TONE = "Custom tone…"
+NO_ICP = "__none__"
 CUSTOM_TYPE = "__custom__"
 MICROCOPY_MODES = {"pick": "Pick micro-copy before drafting", "skip": "Skip it, write the body now"}
 WRITE_OWN = "Write my own…"
@@ -106,6 +107,7 @@ def _restore_brief(session: JobSession) -> None:
         ss[f"fmt-{b.client_id}-{plan}"] = CUSTOM_TYPE
         ss[f"ctype-{b.client_id}"], ss[f"ctdesc-{b.client_id}"] = b.format, b.format_description or ""
     ss[f"goal-{k}"], ss[f"aud-{k}"] = b.goal, b.audience
+    ss[f"icp-{b.client_id}"] = b.icp if b.icp in {i.name for i in profile.icps} else NO_ICP
     if b.word_range:
         ss[f"wmin-{k}"], ss[f"wmax-{k}"] = _clamp_words(b.word_range.min), _clamp_words(b.word_range.max)
     ss[f"hint-{k}"], ss[f"notes-{k}"] = b.angle_hint or "", b.notes or ""
@@ -119,6 +121,18 @@ def _restore_brief(session: JobSession) -> None:
         ss[f"cts-{b.client_id}"] = tone.resolved_style_checklist.get("sample_line", "")
     elif tone.preset_name in {t.name for t in profile.tone_presets}:
         ss[f"tone-{b.client_id}"] = tone.preset_name
+
+
+def _pick_icp(client_id: str, k: str) -> None:
+    """On picking an ICP: refill the Audience box from it and pre-select its default tone. Both stay
+    editable; the ICP itself reaches the prompts in full via Brief.icp_profile."""
+    name = st.session_state[f"icp-{client_id}"]
+    if name == NO_ICP:
+        return
+    icp = next(i for i in profile.icps if i.name == name)
+    st.session_state[f"aud-{k}"] = icps.audience_text(icp)
+    if tone := icps.default_tone(icp, [t.name for t in profile.tone_presets]):
+        st.session_state[f"tone-{client_id}"] = tone
 
 
 def _stepper(current: str) -> None:
@@ -412,10 +426,24 @@ with tab_generate:
                 remember_type = st.checkbox("Save to this client's content types", value=True, key=f"ctrem-{client_id}")
             d = brief_defaults.defaults_for(BRIEFS_ROOT, client_id, "" if custom_type else fmt, client_dir)
             k = f"{client_id}-{fmt}-{plan_pick}"  # widget keys per client+format+item so switching re-prefills
+            icp_names = [i.name for i in profile.icps]
+            if st.session_state.get(f"icp-{client_id}") not in icp_names:
+                st.session_state[f"icp-{client_id}"] = NO_ICP  # also clears a pick an ICP edit removed
+            icp_pick = st.selectbox(
+                "Written for (ICP)", [NO_ICP] + icp_names, key=f"icp-{client_id}", on_change=_pick_icp, args=(client_id, k),
+                format_func=lambda n: "No ICP: write the audience yourself" if n == NO_ICP else field_label(n),
+                help="The client's ideal customer profiles (Knowledge base → Client profile → ICPs). Picking one fills "
+                     "the audience and tone; its roles, pains and objections go to every prompt as context, never as claims.")
+            picked_icp = next((i for i in profile.icps if i.name == icp_pick), None)
+            if picked_icp:
+                st.caption(picked_icp.summary + (f"  \nPains: {'; '.join(picked_icp.pains)}" if picked_icp.pains else ""))
+            if picked_icp:
+                audience_seed = icps.audience_text(picked_icp)
+            else:
+                audience_seed = item.audience if item and item.audience else d["audience"]
             lo, hi = d["word_range"] or (100, 300)
             for key, value in ((f"goal-{k}", d["goal"] if item is None else f"Write the content plan piece: {item.title}."),
-                               (f"aud-{k}", item.audience if item and item.audience else d["audience"]),
-                               (f"notes-{k}", d["notes"]), (f"wmin-{k}", _clamp_words(lo)),
+                               (f"aud-{k}", audience_seed), (f"notes-{k}", d["notes"]), (f"wmin-{k}", _clamp_words(lo)),
                                (f"wmax-{k}", _clamp_words(hi)), (f"hint-{k}", "")):
                 _seed(key, value)
 
@@ -445,7 +473,8 @@ with tab_generate:
             else:
                 if st.button("Suggest a tone", help="One short model call proposing a tone the presets don't cover"):
                     with st.spinner("Asking for a tone suggestion…"):
-                        brief_for_tone = Brief(client_id=client_id, goal=goal, audience=audience, format=fmt)
+                        brief_for_tone = Brief(client_id=client_id, goal=goal, audience=audience, format=fmt,
+                                               icp_profile=icps.render(picked_icp) if picked_icp else None)
                         suggestion = tone_select.suggest_tone(profile, brief_for_tone)
                     if suggestion:
                         st.session_state[f"ctn-{client_id}"] = suggestion.name
@@ -485,7 +514,7 @@ with tab_generate:
                 else:
                     fmt_desc = d["description"] or None
                 brief = Brief(client_id=client_id, goal=goal.strip(), audience=audience.strip(), format=fmt,
-                              format_description=fmt_desc,
+                              format_description=fmt_desc, icp=picked_icp.name if picked_icp else None,
                               word_range=WordRange(min=int(min_words), max=int(max_words)),
                               angle_hint=angle_hint.strip() or None, notes=notes.strip() or None,
                               plan_item_id=plan_pick)
@@ -637,6 +666,29 @@ def _section_editor(client_dir: Path, section: str, key: str, locked: bool):
                            "description": st.column_config.TextColumn("Description", width="large"),
                            "sample_line": st.column_config.TextColumn("Sample line", width="large")})
         return [r for r in rows if (r.get("name") or "").strip()]
+    if section == "icps":
+        st.caption("One row per ICP. In Roles, Pains, Cares about and Objections, separate items with “;”. "
+                   "ICPs steer the writing; they are never stated as facts.")
+        tones = [t.get("name", "") for t in profile_review.section_content(client_dir, "tone_presets")]
+        joined = lambda v: "; ".join(v) if isinstance(v, list) else (v or "")  # noqa: E731
+        rows = st.data_editor(
+            [{"name": i.get("name", ""), "summary": i.get("summary", ""), "roles": joined(i.get("roles")),
+              "company": i.get("company", ""), **{f: joined(i.get(f)) for f in ("pains", "cares_about", "objections")},
+              "default_tone": i.get("default_tone")} for i in content]
+            or [{"name": "", "summary": "", "roles": "", "company": "", "pains": "", "cares_about": "", "objections": "",
+                 "default_tone": None}],
+            num_rows="dynamic", width="stretch", hide_index=True, key=key, disabled=locked,
+            column_config={"name": st.column_config.TextColumn("Name", width="small"),
+                           "summary": st.column_config.TextColumn("Who they are", width="large"),
+                           "roles": st.column_config.TextColumn("Roles", width="medium"),
+                           "company": st.column_config.TextColumn("Company", width="medium"),
+                           "pains": st.column_config.TextColumn("Pains", width="medium"),
+                           "cares_about": st.column_config.TextColumn("Cares about", width="medium"),
+                           "objections": st.column_config.TextColumn("Objections", width="medium"),
+                           "default_tone": st.column_config.SelectboxColumn("Default tone", options=tones)})
+        split = lambda v: [x.strip() for x in (v or "").split(";") if x.strip()]  # noqa: E731
+        return [{**r, **{f: split(r.get(f)) for f in ("roles", "pains", "cares_about", "objections")}}
+                for r in rows if (r.get("name") or "").strip()]
     if section == "banned_words":
         st.caption("One per line. These add to the house banned list; they can never remove from it.")
         c1, c2, c3 = st.columns(3)
@@ -726,19 +778,38 @@ def profile_editor(client_id: str, client_dir: Path, reviewer: str) -> None:
             with st.container(horizontal=True, vertical_alignment="center"):
                 if not locked:
                     if st.button("Save changes", key=f"pe-save-{client_id}-{section}", disabled=no_name):
-                        profile_review.save_section(client_dir, section, edited)
-                        st.session_state["flash"] = f"Saved {title.lower()}."
-                        st.rerun()
-                    if info["status"] == "draft" and st.button("Mark reviewed", key=f"pe-rev-{client_id}-{section}",
-                                                               disabled=no_name, help="Saves your edits too"):
-                        profile_review.save_section(client_dir, section, edited)
-                        profile_review.set_status(client_dir, section, "reviewed", reviewer)
-                        st.rerun()
-                    if st.button("Mark final", type="primary", key=f"pe-fin-{client_id}-{section}", disabled=no_name,
-                                 help="Saves your edits and locks the section"):
-                        profile_review.save_section(client_dir, section, edited)
-                        profile_review.set_status(client_dir, section, "final", reviewer)
-                        st.rerun()
+                        try:
+                            profile_review.save_section(client_dir, section, edited)
+                        except ValueError as exc:
+                            st.error(str(exc))
+                        else:
+                            st.session_state["flash"] = f"Saved {title.lower()}."
+                            st.rerun()
+                    if section == "icps" and st.button(
+                            "Draft ICPs from documents", key=f"pe-icpdraft-{client_id}", disabled=no_name,
+                            help="One model call over this client's documents and set-aside audience notes. "
+                                 "Adds new ICPs as draft rows; existing rows are kept as they are."):
+                        try:
+                            with st.spinner("Drafting ICPs…"):
+                                added = client_setup.draft_icps(client_dir, client_dir / "knowledge_base" / "documents")
+                        except (ValueError, RuntimeError) as exc:
+                            st.error(str(exc))
+                        else:
+                            st.session_state["flash"] = f"Added {added} draft ICP(s); review them below."
+                            st.rerun()
+                    for new_status, label, extra in (("reviewed", "Mark reviewed", {"help": "Saves your edits too"}),
+                                                     ("final", "Mark final", {"type": "primary",
+                                                      "help": "Saves your edits and locks the section"})):
+                        if new_status == "reviewed" and info["status"] != "draft":
+                            continue
+                        if st.button(label, key=f"pe-{new_status[:3]}-{client_id}-{section}", disabled=no_name, **extra):
+                            try:
+                                profile_review.save_section(client_dir, section, edited)
+                            except ValueError as exc:
+                                st.error(str(exc))
+                            else:
+                                profile_review.set_status(client_dir, section, new_status, reviewer)
+                                st.rerun()
                 elif st.button("Reopen", key=f"pe-reopen-{client_id}-{section}", disabled=no_name,
                                help="Back to Reviewed so it can be edited"):
                     profile_review.set_status(client_dir, section, "reviewed", reviewer)
@@ -1020,7 +1091,7 @@ with tab_jobs:
 
 with tab_new:
     st.caption("Scaffolds from clients/_template. The profile drafted from documents is marked DRAFT: "
-               "review the style guide, tone presets and constraints before the first real job.")
+               "review the style guide, tone presets, ICPs and constraints before the first real job.")
     with st.form("new-client"):
         c1, c2 = st.columns(2)
         new_id = c1.text_input("Client id", placeholder="acme", help="Lowercase letters, digits, - or _. Can't be changed later.")
@@ -1029,7 +1100,7 @@ with tab_new:
         website = c2.text_input("Website")
         docs = st.file_uploader("Source documents (decks, brand guides, past content, notes)",
                                 accept_multiple_files=True, type=DOC_TYPES)
-        draft_it = st.checkbox("Draft style guide, tone presets and constraints from the documents", value=True)
+        draft_it = st.checkbox("Draft style guide, tone presets, ICPs and constraints from the documents", value=True)
         compile_it = st.checkbox("Extract knowledge-base facts from the documents", value=True)
         submitted = st.form_submit_button("Create client", type="primary")
 

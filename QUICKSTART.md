@@ -31,10 +31,10 @@ want that coverage; everything else (including text-layer PDF extraction) runs r
 
 1. **Scaffold**: `python -m pipeline.cli init-client acme --from-docs ~/Downloads/acme-materials/`
    Copies the blank template and, if `--from-docs` is given, drafts a first-pass style guide,
-   tone presets, and do-not-say list from whatever's in that folder -- clearly marked DRAFT.
+   tone presets, ICPs (ideal customer profiles), and do-not-say list from whatever's in that folder -- clearly marked DRAFT.
    Without `--from-docs`, you get the bare empty template to fill in by hand.
 2. **Review the draft profile** (one human pass): edit `clients/acme/style_guide.md`,
-   `tone_presets.yaml`, `constraints.yaml` -- approve or correct what the agent proposed.
+   `tone_presets.yaml`, `icps.yaml`, `constraints.yaml` -- approve or correct what the agent proposed.
 3. **Drop source documents** (PDFs, DOCX, text, images -- decks, brand guidelines, past content)
    into `clients/acme/knowledge_base/documents/`.
 4. **Compile**: `python -m pipeline.cli kb-compile --client acme` -- reads every document into
@@ -97,7 +97,8 @@ streamlit run ui/app.py
 ```
 
 **Generate**: pick an approved item from the content plan (or none), a client and content type
-(or "Custom content type…" to name and describe a new one), write the prompt (audience, word range
+(or "Custom content type…" to name and describe a new one), optionally the ICP it's written for
+(fills the audience and pre-selects the ICP's default tone), write the prompt (audience, word range
 and must-follow notes are pre-filled from the client profile's brief defaults, the plan item, or
 that client's last brief of the same type in `local_briefs/<client>/`), pick a tone preset or a
 custom one. If preflight finds a problem with the brief, fix it or press Proceed anyway. Then
@@ -119,11 +120,14 @@ Knowledge base): edit each section in place and mark it Reviewed or Final, and s
 document's role and summary; jobs on a non-final profile say so in their notes. **New client**: the same steps as the
 CLI below (scaffold, draft profile from documents, compile), then review in Knowledge base.
 
-## Picking an angle or tone from the CLI
+## Picking an angle, tone or ICP from the CLI
 
-`run` defaults to angle candidate 0, the client's first tone preset, and the first unflagged
-micro-copy option per field. Override the first two:
+`run` defaults to angle candidate 0, no ICP, the client's first tone preset (or the ICP's default
+tone), and the first unflagged micro-copy option per field. Override the first three (an ICP can
+also be set as `icp:` in the brief YAML):
 
 ```bash
-python -m pipeline.cli run --client acme --brief brief.yaml --angle-index 1 --tone case_study
+python -m pipeline.cli run --client acme --brief brief.yaml --angle-index 1 --tone case_study --icp procurement_lead
 ```
+
+A client added before ICPs existed: `python -m pipeline.cli draft-icps --client acme`.

@@ -9,6 +9,7 @@
 | Intake | `pipeline/stages/intake.py` | Catches mechanical brief/KB gaps (and an unapproved plan item) before spending an LLM call. |
 | Angle menu | `pipeline/stages/angle_menu.py` | 2-3 cheap candidates so a bad direction never costs a full draft+gate cycle. Sees the content plan item and the most relevant client context. |
 | Tone select | `pipeline/stages/tone_select.py` | A dropdown-level decision from the client's pre-approved presets. A human may type a one-off tone (recorded as `ad_hoc` on the job and judged by voice_critic) or ask for one suggestion; it becomes a preset only when a human saves it. |
+| ICP (optional) | `pipeline/icps.py` | Who the piece is for, picked from the client's reviewed ICPs. Rendered once into `Brief.icp_profile` at `start` and passed to angle, micro-copy, synthesis, draft, tone suggestion and `voice_critic`, each time under a "targeting context, not facts" guard. The entailment and `claims_critic` gates are unchanged, so a pain point can shape an angle but never becomes a claim. |
 | Micro-copy menu (optional) | `pipeline/stages/microcopy.py` | Runs after the angle is chosen and before drafting: per-format fields (`formats` in `config/pipeline_config.yaml`), each option pre-flagged by the deterministic lint so the human picks copy the gates will accept. Skippable (`choose_angle` then `execute` with no copy); a finished job can get copy afterwards via `build_microcopy_menu_after` -> `attach_microcopy`, which re-runs `microcopy_lint` and the two judged gates on the draft with the copy on top and leaves the package untouched if any fails. |
 | Brief synthesis | `pipeline/stages/brief_synthesis.py` | Compiles one targeted working spec instead of handing the drafter four raw documents. |
 | Draft | `pipeline/stages/draft.py` | The one full generation pass. The writer gets everything it will be judged on first: the client's rules (`pipeline/kb/rulebook.py`: style guide, tone, banned lists, do-not-say, framing rules, word range), verified facts with their text, the plan item, relevant context, and approved or past examples for voice. |
@@ -76,11 +77,15 @@ drafts of that format.
 ## Client profile review
 
 `pipeline/profile_review.py`: the drafted profile is reviewed per section (style guide, tone
-presets, banned words, framing rules, brief defaults), Draft -> Reviewed -> Final, in
+presets, ICPs, banned words, framing rules, brief defaults), Draft -> Reviewed -> Final, in
 `clients/<id>/profile_review.json`. Final locks a section; an edit outside the app steps it back
 down. Jobs run on a non-final profile, but the job notes and PDF say which sections aren't final.
-Brief defaults (`brief_defaults.yaml`: audience, must-follow, per-content-type overrides including
-a word range, custom content types) pre-fill the brief form.
+ICPs (`icps.yaml`: name, summary, roles, company, pains, cares about, objections, optional
+default tone) are drafted with the tone presets when a client is added; an ICP's default tone must
+name an existing preset. A client added before ICPs gets them from `draft-icps` or the "Draft ICPs
+from documents" button, which also reads the audience notes `kb_compile` set aside and only adds
+names the client doesn't have yet. Brief defaults (`brief_defaults.yaml`: audience, must-follow,
+per-content-type overrides including a word range, custom content types) pre-fill the brief form.
 
 ## Local UI (v2)
 

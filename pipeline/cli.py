@@ -119,11 +119,14 @@ def kb_add_cmd(
 @cli.command("run")
 @click.option("--client", "client_id", required=True)
 @click.option("--brief", "brief_path", required=True, type=click.Path(exists=True))
-@click.option("--tone", "tone_preset", default=None, help="Tone preset name (defaults to the client's first preset).")
+@click.option("--tone", "tone_preset", default=None,
+              help="Tone preset name (defaults to the ICP's default tone, then the client's first preset).")
+@click.option("--icp", default=None, help="ICP name from the client's icps.yaml (or set `icp:` in the brief).")
 @click.option("--angle-index", default=0, help="Which angle candidate to use (0-indexed).")
 @click.option("--accept-preflight", is_flag=True,
               help="Proceed past brief problems found before drafting; they are recorded and the client's rules win.")
-def run_cmd(client_id: str, brief_path: str, tone_preset: Optional[str], angle_index: int, accept_preflight: bool) -> None:
+def run_cmd(client_id: str, brief_path: str, tone_preset: Optional[str], icp: Optional[str], angle_index: int,
+            accept_preflight: bool) -> None:
     try:
         output_dir = run_job.run(
             client_id=client_id,
@@ -133,6 +136,7 @@ def run_cmd(client_id: str, brief_path: str, tone_preset: Optional[str], angle_i
             tone_preset=tone_preset,
             angle_index=angle_index,
             accept_preflight=accept_preflight,
+            icp=icp,
         )
     except run_job.PreflightIssues as exc:
         lines = "\n".join(f"  - {i}" for i in exc.issues)
@@ -203,6 +207,15 @@ def add_rule_cmd(client_id: str, target: str, rule: str) -> None:
     """Add one rule to the client's style guide, framing rules or banned phrases (additive only)."""
     path = lessons.apply_suggestion(CLIENTS_ROOT / client_id, target, rule)
     click.echo(f"Added to {path}")
+
+
+@cli.command("draft-icps")
+@click.option("--client", "client_id", required=True)
+def draft_icps_cmd(client_id: str) -> None:
+    """Drafts ICPs for an existing client from its documents and set-aside audience notes."""
+    client_dir = CLIENTS_ROOT / client_id
+    added = client_setup.draft_icps(client_dir, client_dir / "knowledge_base" / "documents")
+    click.echo(f"Added {added} draft ICP(s) to {client_dir / 'icps.yaml'}; review them before use.")
 
 
 @cli.command("export")

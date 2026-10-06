@@ -28,7 +28,7 @@ from typing import Optional
 
 import yaml
 
-from pipeline import config, profile_review
+from pipeline import config, icps, profile_review
 from pipeline.gates import (
     claims_critic,
     client_constraints,
@@ -100,6 +100,7 @@ def _load_client_profile(client_dir: Path) -> ClientProfile:
         website=str(data["website"]) if data.get("website") else None,
         synthetic=bool(data.get("synthetic", False)),
         tone_presets=tone_data.get("presets") or [],
+        icps=icps.load(client_dir),
         banned_words=data.get("extra_banned_words") or [],
         banned_phrases=data.get("extra_banned_phrases") or [],
         do_not_say=constraints_data.get("do_not_say") or [],
@@ -179,6 +180,9 @@ def start(
         raise FileNotFoundError(f"no such client: {client_id} (looked in {client_dir})")
     transport = transport or ClaudeTransport()
     profile = _load_client_profile(client_dir)
+    # A picked ICP is rendered once here, so the session carries it even if the profile changes.
+    if brief.icp and not brief.icp_profile:
+        brief = brief.model_copy(update={"icp_profile": icps.render(icps.find(profile.icps, brief.icp))})
 
     # Preflight first and without creating a job: a brief that can't pass costs one cheap call and
     # leaves no half-started job behind.
@@ -191,6 +195,7 @@ def start(
     job_id = uuid.uuid4().hex[:10]
     record = job_record.new_record(job_id=job_id, client_id=client_id, brief_summary=brief_summary or brief.goal[:160])
     record.format = brief.format
+    record.icp = brief.icp
     record.plan_item_id = brief.plan_item_id
     record.preflight_overridden = list(preflight_ack or [])
     record.human_touchpoints.extend(preflight_notes)
@@ -309,7 +314,8 @@ def _run_gates(
         client_constraints_critic.run(as_read, profile, transport=transport),
         entailment.run(draft, kb_entries),
         claims_critic.run(as_read, kb_entries, profile, transport=transport),
-        voice_critic.run(as_read, profile, transport=transport, tone=tone, must_follow=brief.notes),
+        voice_critic.run(as_read, profile, transport=transport, tone=tone, must_follow=brief.notes,
+                         reader_profile=brief.icp_profile),
     ]
 
 
@@ -379,6 +385,8 @@ def execute(
         working_spec["content_plan_item"] = plan_block.strip()
     if session.preflight_overridden:
         working_spec["known_conflicts"] = session.preflight_overridden
+    if brief.icp_profile:
+        working_spec["reader_profile"] = brief.icp_profile
     if selected:
         working_spec["microcopy_selected"] = selected  # so the body doesn't repeat or contradict it
     record.stages_run.append("brief_synthesis")
@@ -573,7 +581,8 @@ def attach_microcopy(
         results += [
             client_constraints_critic.run(as_read, profile, transport=transport),
             claims_critic.run(as_read, _load_kb_entries(client_dir), profile, transport=transport),
-            voice_critic.run(as_read, profile, transport=transport, tone=session.tone, must_follow=session.brief.notes),
+            voice_critic.run(as_read, profile, transport=transport, tone=session.tone, must_follow=session.brief.notes,
+                             reader_profile=session.brief.icp_profile),
         ]
     if any(g.status == GateStatus.FAILED for g in results):
         return results
@@ -606,11 +615,16 @@ def run(
     angle_index: int = 0,
     retry_budget: Optional[int] = None,
     accept_preflight: bool = False,
+    icp: Optional[str] = None,
 ) -> Path:
-    """Non-interactive path for the CLI: all three phases back to back, taking the given angle
-    and tone and the first unflagged option for each micro-copy field. With accept_preflight,
-    brief problems found before drafting are recorded and the job proceeds (client rules win)."""
+    """Non-interactive path for the CLI: all three phases back to back, taking the given angle,
+    tone and ICP (or the brief's own `icp:`) and the first unflagged option for each micro-copy
+    field. Without --tone, a picked ICP's default tone wins over the client's first preset. With
+    accept_preflight, brief problems found before drafting are recorded and the job proceeds
+    (client rules win)."""
     brief = intake.load_brief(brief_path)
+    if icp:
+        brief = brief.model_copy(update={"icp": icp, "icp_profile": None})
     transport = ClaudeTransport()
     try:
         session = start(client_id, brief, clients_root, output_root, transport=transport, brief_summary=str(brief_path))
@@ -621,7 +635,9 @@ def run(
                         brief_summary=str(brief_path), preflight_ack=exc.issues)
 
     profile = _load_client_profile(clients_root / client_id)
-    preset_name = tone_preset or (profile.tone_presets[0].name if profile.tone_presets else None)
+    names = [t.name for t in profile.tone_presets]
+    icp_tone = icps.default_tone(icps.find(profile.icps, brief.icp), names) if brief.icp else None
+    preset_name = tone_preset or icp_tone or (names[0] if names else None)
     if not preset_name:
         output_dir = output_root / "jobs" / session.job_id
         _block(output_dir, job_record.load(output_dir), "awaiting_human", ["no tone preset available or specified"])

@@ -42,6 +42,10 @@ class Brief(BaseModel):
     format: str  # e.g. "blog_post", "email", "social_post", "landing_page", or a client's custom type
     format_description: Optional[str] = None  # what a custom content type is, for the prompts
     word_range: Optional[WordRange] = None
+    icp: Optional[str] = None  # name of the client ICP this piece is written for, if one was picked
+    # The ICP rendered as prompt text (pipeline/icps.py), resolved once at start so a session is
+    # self-contained even if the profile changes later. Targeting context, never a claim.
+    icp_profile: Optional[str] = None
     angle_hint: Optional[str] = None
     deadline: Optional[dt.date] = None
     notes: Optional[str] = None
@@ -119,6 +123,20 @@ class TonePreset(BaseModel):
     sample_line: str
 
 
+class Icp(BaseModel):
+    """An ideal customer profile: who a piece is written for. Targeting context only -- a pain point
+    here can shape an angle, but it is not a verified fact and never appears in copy as a claim."""
+
+    name: str
+    summary: str
+    roles: list[str] = Field(default_factory=list)  # job titles / buyer roles
+    company: str = ""  # firmographics: size, sector, region, maturity
+    pains: list[str] = Field(default_factory=list)
+    cares_about: list[str] = Field(default_factory=list)
+    objections: list[str] = Field(default_factory=list)
+    default_tone: Optional[str] = None  # a tone preset name, pre-selected when this ICP is picked
+
+
 class ClientProfile(BaseModel):
     client_id: str
     company_name: str
@@ -126,6 +144,7 @@ class ClientProfile(BaseModel):
     website: Optional[str] = None
     synthetic: bool = False
     tone_presets: list[TonePreset] = Field(default_factory=list)
+    icps: list[Icp] = Field(default_factory=list)
     banned_words: list[str] = Field(default_factory=list)  # EXTRA_BANNED_WORDS, additive only
     banned_phrases: list[str] = Field(default_factory=list)  # EXTRA_BANNED_PHRASES, additive only
     do_not_say: list[str] = Field(default_factory=list)  # literal terms, substring-checked
@@ -214,6 +233,7 @@ class JobRecord(BaseModel):
     # What was chosen, so a package can be rebuilt; None/empty on jobs that predate this.
     angle: Optional[Angle] = None
     tone: Optional[ToneChoice] = None
+    icp: Optional[str] = None
     microcopy_selected: dict[str, str] = Field(default_factory=dict)
     rounds: list[RevisionRound] = Field(default_factory=list)
     # Brief problems found before drafting that a human chose to proceed past.

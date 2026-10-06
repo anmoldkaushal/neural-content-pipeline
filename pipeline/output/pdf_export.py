@@ -84,7 +84,8 @@ def render_package_pdf(
     story.append(Paragraph(_escape(company_name), styles["doc_title"]))
     story.append(
         Paragraph(
-            f"Job {record.job_id} &middot; {record.created_at:%Y-%m-%d %H:%M} &middot; status: {record.status}",
+            f"Job {record.job_id} &middot; {record.created_at:%Y-%m-%d %H:%M} &middot; status: {record.status}"
+            + (f" &middot; written for: {_escape(record.icp)}" if record.icp else ""),
             styles["meta"],
         )
     )

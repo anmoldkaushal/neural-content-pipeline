@@ -29,6 +29,7 @@ def run(
     transport: Optional[ClaudeTransport] = None,
     tone: Optional[ToneChoice] = None,
     must_follow: Optional[str] = None,
+    reader_profile: Optional[str] = None,
 ) -> GateResult:
     transport = transport or ClaudeTransport()
     template = _PROMPT_PATH.read_text(encoding="utf-8")
@@ -46,7 +47,8 @@ def run(
         f"Client: {profile.company_name} ({profile.industry})\n"
         f"Approved tone presets:\n{rulebook.tone_lines(profile)}\n"
         f"{_chosen_tone_line(tone)}\n"
-        f"{style_guide}"
+        + (f"{reader_profile}\n" if reader_profile else "")
+        + f"{style_guide}"
         f"{judged.SEVERITY_FORMAT}\n"
         + (f"Limits the writer had to work within:\n{limits}" if limits else "")
         + "\n"
