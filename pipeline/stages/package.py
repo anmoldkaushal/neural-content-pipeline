@@ -23,6 +23,8 @@ def build_package(
             "claim_id": cid,
             "claim": used_entries[cid].claim if cid in used_entries else "(unknown claim id)",
             "source_doc": used_entries[cid].source_doc if cid in used_entries else None,
+            # who confirmed the fact: a person's name, or the agent review (kb_triage.AGENT)
+            "confirmed_by": used_entries[cid].confirmed_by if cid in used_entries else None,
         }
         for cid in draft.claims_used
     ]

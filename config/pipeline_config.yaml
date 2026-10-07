@@ -1,7 +1,7 @@
 # Tunable knobs, loaded by pipeline/config.py. Every consumer falls back to the same default it
 # would use if this file didn't exist -- edit here to change behavior without touching code.
 
-retry_budget_per_gate: 2
+retry_budget_per_gate: 3
 
 microcopy_caps:
   title: 3
@@ -27,6 +27,13 @@ formats:
   email:
     word_range: [100, 200]
     microcopy: {subject_line: 5, preheader: 3, cta: 3}
+  # Several emails in one job: the angle is an arc with one step per email, each email is drafted
+  # knowing the ones before it and gated on its own. word_range is per email; `sequence` is the
+  # default count (the brief can change it). No micro-copy menu: one menu can't serve five emails.
+  email_sequence:
+    word_range: [100, 200]
+    sequence: 5
+    microcopy: {}
   linkedin_message:
     word_range: [60, 120]
     microcopy: {opener: 3, cta: 3}

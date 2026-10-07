@@ -6,8 +6,10 @@ picked ICP is rendered once into Brief.icp_profile, so every stage that already 
 line also sees the roles, pains and objections behind it.
 
 ICPs are targeting context, not facts: the same rule kb_compile applies to "audience" statements.
-Each prompt that receives one carries GUARD, and the entailment gate still holds every claim in a
-draft to the verified knowledge base, so a pain point can shape an angle but never becomes a claim."""
+Each prompt that receives one carries GUARD: a draft may speak to the reader's situation (that is
+what an opening on "the reader's inflection point" needs), but a pain point never becomes a claim
+about results, the market or people in general. entailment and claims_critic still hold every
+claim in a draft to the verified knowledge base."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,8 +21,11 @@ from pipeline.schemas import Icp
 
 FILE = "icps.yaml"
 LIST_FIELDS = ("roles", "pains", "cares_about", "objections")
-GUARD = ("Reader profile (targeting context, not facts): shape the piece to this reader, but never "
-         "state a pain, goal or objection below as a claim about the client, the reader or the market.")
+GUARD = ("Reader profile (targeting context, not facts): write to this reader. Speaking to their "
+         "situation in the second person, as recognition or a question (\"you built this by being in "
+         "every decision\"), is the point of a profile and is fine. Never turn a pain, goal or "
+         "objection below into a claim about the client's results, the market or people in general "
+         "(\"most founders burn out\", \"our members double revenue\").")
 
 
 def load(client_dir: Path) -> list[Icp]:

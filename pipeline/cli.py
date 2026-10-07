@@ -16,6 +16,7 @@ from pipeline.run_job import _load_client_profile
 from pipeline.kb import approved_examples, content_plan
 from pipeline.stages import kb_add as kb_add_stage
 from pipeline.stages import kb_compile as kb_compile_stage
+from pipeline.stages import kb_triage
 from pipeline.stages import kb_verify as kb_verify_stage
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -48,7 +49,8 @@ def init_client_cmd(client_id: str, from_docs: Optional[str]) -> None:
 
 @cli.command("kb-compile")
 @click.option("--client", "client_id", required=True)
-def kb_compile_cmd(client_id: str) -> None:
+@click.option("--no-review", is_flag=True, help="Skip the agent review; every new fact waits for a person.")
+def kb_compile_cmd(client_id: str, no_review: bool) -> None:
     client_dir = CLIENTS_ROOT / client_id
     entries, warnings = kb_compile_stage.compile_kb(client_dir)
     pending = [e for e in entries if e.status == "pending"]
@@ -58,6 +60,33 @@ def kb_compile_cmd(client_id: str) -> None:
         click.echo(f"{len(proposed)} content plan item(s) proposed -- see `plan`, then `plan-approve`.")
     for w in warnings:
         click.echo(f"  warning: {w}")
+    if not no_review:
+        _echo_review(kb_triage.run(client_dir), client_dir)
+
+
+def _echo_review(summary: dict, client_dir: Path) -> None:
+    click.echo(
+        f"Agent review of {summary['reviewed']} fact(s): {summary['auto_verified']} confirmed, "
+        f"{summary['duplicate']} merged as duplicates, {summary['not_client_fact']} set aside (not about the "
+        f"client), {summary['unsupported']} rejected (not in the source), {summary['needs_you']} need you."
+    )
+    for w in summary["warnings"]:
+        click.echo(f"  warning: {w}")
+    top = kb_triage.needs_you(client_dir)[:kb_triage.NEEDS_YOU_SHOWN]
+    for e in top:
+        click.echo(f"  [{e.id}] {e.claim}\n      why: {e.triage_reason}")
+
+
+@cli.command("kb-review")
+@click.option("--client", "client_id", required=True)
+@click.option("--undo", is_flag=True, help="Put every agent decision back to pending.")
+def kb_review_cmd(client_id: str, undo: bool) -> None:
+    """Agent review of facts nobody has decided on yet (runs after kb-compile by default)."""
+    client_dir = CLIENTS_ROOT / client_id
+    if undo:
+        click.echo(f"Put {kb_triage.undo(client_dir)} agent decision(s) back to pending.")
+        return
+    _echo_review(kb_triage.run(client_dir), client_dir)
 
 
 @cli.command("kb-verify")

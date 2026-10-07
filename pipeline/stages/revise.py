@@ -1,4 +1,5 @@
-"""Bounded retry: each failed gate gets its own retry budget (config-driven, default 2). The
+"""Bounded retry: each failed gate gets its own retry budget (config-driven, default 3: up to
+three drafts, so two revisions, per gate). The
 revise pass receives every failing gate's specific findings in one round, plus what earlier rounds
 were told to fix -- not a vague "try again", and not one gate at a time. Fixing gates one per round
 spent the budget on the order gates happened to run in, and a revision told only about the latest
@@ -45,7 +46,11 @@ def _items(result: GateResult) -> list[str]:
     return result.flagged_items or [result.detail]
 
 
-def next_revision_instruction(failed: GateResult | list[GateResult], history: list[list[GateResult]] | None = None) -> str:
+def next_revision_instruction(
+    failed: GateResult | list[GateResult],
+    history: list[list[GateResult]] | None = None,
+    banned: list[str] | None = None,
+) -> str:
     """Turns this round's gate failures (and earlier rounds') into the next pass's instructions."""
     failed = [failed] if isinstance(failed, GateResult) else failed
     lines = ["The previous draft failed these checks. Fix every item below:"]
@@ -58,4 +63,9 @@ def next_revision_instruction(failed: GateResult | list[GateResult], history: li
     if earlier:
         lines.append("\nEarlier rounds were told to fix these; do not reintroduce any of them:")
         lines += [f"- [{r.gate_name}] {item}" for r in earlier for item in _items(r)]
+    if banned:
+        # A reviewer once suggested "not a conference or a networking event" as a fix; the writer
+        # followed it and the do-not-say gate failed the next draft. The client's terms always win.
+        lines.append("\nNever use these terms, even where a finding above suggests wording that contains one: "
+                     + "; ".join(banned))
     return "\n".join(lines)

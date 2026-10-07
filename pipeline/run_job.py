@@ -31,6 +31,7 @@ import yaml
 from pipeline import config, icps, profile_review
 from pipeline.gates import (
     claims_critic,
+    judged,
     client_constraints,
     client_constraints_critic,
     entailment,
@@ -180,6 +181,8 @@ def start(
         raise FileNotFoundError(f"no such client: {client_id} (looked in {client_dir})")
     transport = transport or ClaudeTransport()
     profile = _load_client_profile(client_dir)
+    if brief.sequence_length is None and (n := config.sequence_length(brief.format)):
+        brief = brief.model_copy(update={"sequence_length": n})
     # A picked ICP is rendered once here, so the session carries it even if the profile changes.
     if brief.icp and not brief.icp_profile:
         brief = brief.model_copy(update={"icp_profile": icps.render(icps.find(profile.icps, brief.icp))})
@@ -293,7 +296,8 @@ def build_microcopy_menu(
 def _save_draft(output_dir: Path, draft: Draft) -> None:
     drafts_dir = output_dir / "drafts"
     drafts_dir.mkdir(parents=True, exist_ok=True)
-    (drafts_dir / f"rev-{draft.revision}.json").write_text(draft.model_dump_json(indent=2), encoding="utf-8")
+    name = f"email-{draft.piece}-rev-{draft.revision}" if draft.piece else f"rev-{draft.revision}"
+    (drafts_dir / f"{name}.json").write_text(draft.model_dump_json(indent=2), encoding="utf-8")
 
 
 def _run_gates(
@@ -305,18 +309,87 @@ def _run_gates(
     brief: Brief,
     tone: ToneChoice,
     transport: ClaudeTransport,
+    facts: str = "",
+    earlier_voice_notes: Optional[list[str]] = None,
 ) -> list[GateResult]:
     as_read = _with_microcopy(draft, selected)
     return [
         microcopy_result,
         style_lint.run(draft, profile, word_range=brief.word_range),
         client_constraints.run(draft, profile),
-        client_constraints_critic.run(as_read, profile, transport=transport),
+        client_constraints_critic.run(as_read, profile, transport=transport, facts=facts),
         entailment.run(draft, kb_entries),
         claims_critic.run(as_read, kb_entries, profile, transport=transport),
         voice_critic.run(as_read, profile, transport=transport, tone=tone, must_follow=brief.notes,
-                         reader_profile=brief.icp_profile),
+                         reader_profile=brief.icp_profile, facts=facts, earlier_notes=earlier_voice_notes),
     ]
+
+
+class _PieceFailed(Exception):
+    """A piece used up its retry budget; carries what the caller needs to escalate it."""
+
+    def __init__(self, draft: Draft, failed: list[GateResult], exhausted: list[GateResult], attempts: dict[str, int]):
+        super().__init__(exhausted[0].gate_name)
+        self.draft, self.failed, self.exhausted, self.attempts = draft, failed, exhausted, attempts
+
+
+def _draft_piece(
+    job_id: str,
+    spec: dict,
+    piece: Optional[int],
+    record,
+    output_dir: Path,
+    gate_args: dict,
+    draft_args: dict,
+    retry_budget: int,
+    transport: ClaudeTransport,
+) -> tuple[Draft, list[GateResult], dict[str, int]]:
+    """One piece through draft -> gates -> bounded revise rounds; a revision edits the previous
+    draft. Returns (draft, final gate results, attempts per gate); raises _PieceFailed when a gate
+    is still failing after the retry budget."""
+    current = draft_stage.write_draft(job_id, spec, transport=transport, revision=0, **draft_args)
+    current = current.model_copy(update={"piece": piece})
+    attempts: dict[str, int] = {}
+    history: list[list[GateResult]] = []
+    while True:
+        label = f"email {piece} " if piece else ""
+        record.stages_run.append(f"draft {label}(revision {current.revision})")
+        _save_draft(output_dir, current)
+        # The voice judge sees what it said in earlier rounds, so it can't ask for the opposite.
+        earlier_voice = [i for round_ in history for g in round_ if g.gate_name == "voice_critic"
+                         for i in (g.flagged_items or [g.detail])]
+        gate_results = _run_gates(current, transport=transport, earlier_voice_notes=earlier_voice, **gate_args)
+        record.rounds.append(RevisionRound(
+            revision=current.revision, word_count=current.word_count,
+            gate_results=gate_results, change_notes=current.change_notes, piece=piece,
+        ))
+        job_record.save(output_dir, record)
+
+        failed = [g for g in gate_results if g.status == GateStatus.FAILED]
+        if not failed:
+            return current, gate_results, attempts
+        for g in failed:
+            attempts[g.gate_name] = attempts.get(g.gate_name, 0) + 1
+        exhausted = [g for g in failed if not revise.should_retry(g, attempts[g.gate_name], retry_budget)]
+        if exhausted:
+            raise _PieceFailed(current, failed, exhausted, attempts)
+
+        feedback = revise.next_revision_instruction(failed, history, banned=judged.banned_terms(gate_args["profile"]))
+        history.append(failed)
+        revised = draft_stage.revise_draft(
+            job_id, spec, current, feedback, transport=transport,
+            rules=draft_args["rules"], facts=draft_args["facts"], context_block=draft_args["context_block"],
+        )
+        current = revised.model_copy(update={"piece": piece})
+
+
+def _combined(job_id: str, drafts: list[Draft], n: int) -> Draft:
+    """A sequence as one deliverable: each email under its own heading."""
+    body = "\n\n".join(f"EMAIL {d.piece} OF {n}\n\n{d.body}" for d in drafts)
+    claims = list(dict.fromkeys(c for d in drafts for c in d.claims_used))
+    return Draft(job_id=job_id, body=body, word_count=sum(d.word_count for d in drafts),
+                 outline=[o for d in drafts for o in d.outline], claims_used=claims,
+                 revision=max((d.revision for d in drafts), default=0))
 
 
 def execute(
@@ -392,58 +465,64 @@ def execute(
     record.stages_run.append("brief_synthesis")
     voice_reference = "" if working_spec["approved_examples"] else context.voice_reference(client_dir)
 
-    # 8. draft, then gates and bounded revise rounds; a revision edits the previous draft
-    current_draft = draft_stage.write_draft(
-        job_id, working_spec, transport=transport, revision=0,
-        rules=rules, facts=facts, context_block=context_block, voice_reference=voice_reference,
-    )
-    attempts: dict[str, int] = {}
-    history: list[list[GateResult]] = []
-
-    while True:
-        record.stages_run.append(f"draft (revision {current_draft.revision})")
-        _save_draft(output_dir, current_draft)
-        gate_results = _run_gates(current_draft, selected, microcopy_result, profile, kb_entries, brief, chosen_tone, transport)
-        record.gate_results = gate_results
-        record.rounds.append(RevisionRound(
-            revision=current_draft.revision, word_count=current_draft.word_count,
-            gate_results=gate_results, change_notes=current_draft.change_notes,
-        ))
-        job_record.save(output_dir, record)
-
-        failed = [g for g in gate_results if g.status == GateStatus.FAILED]
-        if not failed:
-            break
-
-        for g in failed:
-            attempts[g.gate_name] = attempts.get(g.gate_name, 0) + 1
-        record.retry_count = dict(attempts)
-        exhausted = [g for g in failed if not revise.should_retry(g, attempts[g.gate_name], effective_retry_budget)]
-
-        if exhausted:
-            primary = exhausted[0]
-            others = [g.gate_name for g in failed if g is not primary]
-            notes = [
-                f"gate {g.gate_name!r} failed after {attempts[g.gate_name]} attempt(s): {g.detail}" for g in failed
-            ]
+    # 8. draft, then gates and bounded revise rounds -- once, or once per email of a sequence,
+    # each email knowing the ones before it and gated on its own
+    n = brief.sequence_length or 0
+    steps = chosen_angle.structure
+    gate_args = dict(selected=selected, microcopy_result=microcopy_result, profile=profile, kb_entries=kb_entries,
+                     brief=brief, tone=chosen_tone, facts=facts)
+    draft_args = dict(rules=rules, facts=facts, context_block=context_block, voice_reference=voice_reference)
+    done: list[Draft] = []
+    final_gates: list[GateResult] = []
+    retries: dict[str, int] = {}
+    for piece in (range(1, n + 1) if n else [None]):
+        spec = working_spec
+        if piece:
+            spec = dict(working_spec)
+            spec["sequence"] = (
+                f"Write ONLY email {piece} of {n} in the sequence. This email's job: "
+                f"{steps[piece - 1] if len(steps) >= piece else f'step {piece} of the arc'}. Don't repeat "
+                "what the earlier emails already said; move the reader one step on."
+            )
+            spec["emails_already_written"] = [f"Email {d.piece}: {d.body}" for d in done]
+        try:
+            draft, gates, attempts = _draft_piece(job_id, spec, piece, record, output_dir, gate_args, draft_args,
+                                                  effective_retry_budget, transport)
+        except _PieceFailed as f:
+            where = f"email {piece} of {n}: " if piece else ""
+            for g, k in f.attempts.items():
+                retries[f"{g} (email {piece})" if piece else g] = k
+            record.retry_count = retries
+            notes = [f"{where}gate {g.gate_name!r} failed after {f.attempts[g.gate_name]} attempt(s): {g.detail}"
+                     for g in f.failed]
+            if done:
+                notes.append(f"emails 1-{len(done)} passed every gate; see drafts/")
             # Persist the failing draft so a human has something to actually review -- a gate
-            # failure without the text that failed it is an escalation nobody can act on.
-            (output_dir / "last_failed_draft.json").write_text(current_draft.model_dump_json(indent=2), encoding="utf-8")
+            # failure without the text that failed it is an escalation nobody can act on. For a
+            # sequence, that's every email so far, so finishing by hand covers them all.
+            failing = _combined(job_id, done + [f.draft], n) if piece else f.draft
+            (output_dir / "last_failed_draft.json").write_text(failing.model_dump_json(indent=2), encoding="utf-8")
             lessons.record(output_root, session.client_id, job_id, record.rounds)
             _block(output_dir, record, "awaiting_human", notes)
-            raise revise.RetryBudgetExceeded(primary.gate_name, attempts[primary.gate_name], primary, also_failing=others)
-
-        feedback = revise.next_revision_instruction(failed, history)
-        history.append(failed)
-        current_draft = draft_stage.revise_draft(
-            job_id, working_spec, current_draft, feedback, transport=transport,
-            rules=rules, facts=facts, context_block=context_block,
-        )
+            primary = f.exhausted[0]
+            raise revise.RetryBudgetExceeded(primary.gate_name, f.attempts[primary.gate_name], primary,
+                                             also_failing=[g.gate_name for g in f.failed if g is not primary])
+        done.append(draft)
+        for g, k in attempts.items():
+            retries[f"{g} (email {piece})" if piece else g] = k
+        record.retry_count = retries
+        final_gates += [g.model_copy(update={"gate_name": f"{g.gate_name} (email {piece})"}) for g in gates] if piece else gates
+    current_draft = _combined(job_id, done, n) if n else done[0]
+    gate_results = final_gates
+    record.gate_results = gate_results
 
     # 9. package
     final_package = package.build_package(
         job_id, current_draft, session.microcopy_menu, gate_results, kb_entries, microcopy_selected=selected
     )
+    if n:
+        final_package["sequence_length"] = n
+        final_package["sequence"] = [d.model_dump(mode="json") for d in done]
     package.write_package(output_dir, final_package)
     record.stages_run.append("package")
     record.status = "complete"
@@ -493,7 +572,7 @@ def finish_by_hand(
     )
     results = [
         microcopy_lint.run(record.microcopy_selected, profile),
-        style_lint.run(draft, profile, word_range=session.brief.word_range),
+        style_lint.run(draft, profile, word_range=None if session.brief.sequence_length else session.brief.word_range),
         client_constraints.run(draft, profile),
     ] + [
         GateResult(gate_name=name, status=GateStatus.SKIPPED, detail=f"not re-run: finished by hand by {edited_by}")

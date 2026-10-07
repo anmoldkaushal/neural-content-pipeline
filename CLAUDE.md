@@ -10,12 +10,15 @@ publish/distribute/analyze -- those live elsewhere or arrive as inputs.
 - The provenance rule: `pipeline/kb/provenance.py`. A fact is not usable in a draft until it is
   confirmed, sourced, and dated in a client's `provenance.json`. Missing provenance is itself a
   failure, not a warning -- `ensure_verified()` refuses loudly, same as
-  `neural-pnotp-gtm/waterfall/verify_tenant.py`.
+  `neural-pnotp-gtm/waterfall/verify_tenant.py`. The confirmer is a person or the agent review
+  (`pipeline/stages/kb_triage.py`, `confirmed_by: agent:kb-review`), which confirms only low-risk
+  facts matched to their source in code and sends everything else to a person. Keep its policy in
+  `decide()`, and keep agent confirmations visible (package, PDF) and undoable.
 - The house style gate: `pipeline/gates/style_lint.py`. Fails the run, does not warn. A client
   may only ADD to the banned-word/phrase lists via its own profile, never remove from the base
   lists.
 - Adding a client: see "Adding a new client" in `QUICKSTART.md` -- `init-client`, drop docs,
-  `kb-compile`, `kb-verify`, `plan-approve`, then `run`.
+  `kb-compile` (runs the agent review), confirm what Needs you, `plan-approve`, then `run`.
 - Three knowledge layers, kept apart on purpose: facts (`kb_index.json`, the only thing a draft
   may state), context (`knowledge_base/context/`, document sections the writer reads for
   direction) and plan (`content_plan.yaml`, planned pieces). Context and plan are derived from

@@ -23,8 +23,8 @@ from pipeline.kb.provenance import ProvenanceError, verify_client  # noqa: E402
 from pipeline.ledger import job_record, lessons, stats  # noqa: E402
 from pipeline.output import pdf_export  # noqa: E402
 from pipeline.output.pdf_export import field_label  # noqa: E402
-from pipeline.schemas import Brief, JobSession, TonePreset, WordRange  # noqa: E402
-from pipeline.stages import kb_add, kb_compile, kb_verify, revise, tone_select  # noqa: E402
+from pipeline.schemas import Brief, JobSession, KBEntry, TonePreset, WordRange  # noqa: E402
+from pipeline.stages import kb_add, kb_compile, kb_triage, kb_verify, revise, tone_select  # noqa: E402
 
 CLIENTS_ROOT = REPO_ROOT / "clients"
 OUTPUT_ROOT = REPO_ROOT / "output"
@@ -40,6 +40,8 @@ MIN_WORDS, MAX_WORDS = 20, 4000
 GATE_STATUS = {"passed": "✅ Passed", "failed": "❌ Failed", "skipped": "⚠️ Skipped"}
 FACT_STATUS = {"pending": "Needs review", "verified": "Verified", "stale": "Stale",
                "rejected": "Deleted", "excluded": "Set aside"}
+TRIAGE_LABEL = {"auto_verified": "Agent confirmed", "needs_you": "Needs you", "unsupported": "Not in source",
+                "duplicate": "Duplicate", "not_client_fact": "Not about the client"}
 JOB_STATUS = {"complete": "✅ Complete", "complete_manual_edit": "✅ Complete (hand-edited)",
               "awaiting_human": "🙋 Needs a human", "awaiting_selection": "⏸ Waiting for a choice",
               "failed": "❌ Failed", "in_progress": "… In progress"}
@@ -72,11 +74,20 @@ def _save_uploads(files, client_dir: Path) -> None:
 
 def _compile(client_dir: Path) -> str:
     with st.spinner("Reading documents: facts, context and content plan (a few model calls per document)…"):
-        entries, warnings = kb_compile.compile_kb(client_dir)
-    pending = sum(1 for e in entries if e.status == "pending")
+        _, warnings = kb_compile.compile_kb(client_dir)
     proposed = sum(1 for i in content_plan.load(client_dir) if i.status == "proposed")
-    return (f"Compiled: {pending} fact(s) and {proposed} plan item(s) pending review."
+    message = _agent_review(client_dir)
+    return (message + (f" {proposed} plan item(s) to review." if proposed else "")
             + (f" Warnings: {'; '.join(warnings)}" if warnings else ""))
+
+
+def _agent_review(client_dir: Path) -> str:
+    with st.spinner("Agent review: merging duplicates and checking each fact against its source…"):
+        r = kb_triage.run(client_dir)
+    message = (f"Agent reviewed {r['reviewed']} fact(s): {r['auto_verified']} confirmed, {r['duplicate']} duplicates "
+               f"merged, {r['not_client_fact']} not about the client, {r['unsupported']} not in the source, "
+               f"{r['needs_you']} need you.")
+    return message + (f" Warnings: {'; '.join(r['warnings'])}" if r["warnings"] else "")
 
 
 def _reset_job() -> None:
@@ -110,6 +121,8 @@ def _restore_brief(session: JobSession) -> None:
     ss[f"icp-{b.client_id}"] = b.icp if b.icp in {i.name for i in profile.icps} else NO_ICP
     if b.word_range:
         ss[f"wmin-{k}"], ss[f"wmax-{k}"] = _clamp_words(b.word_range.min), _clamp_words(b.word_range.max)
+    if b.sequence_length:
+        ss[f"seq-{k}"] = b.sequence_length
     ss[f"hint-{k}"], ss[f"notes-{k}"] = b.angle_hint or "", b.notes or ""
     tone = session.tone
     if tone is None:
@@ -263,7 +276,7 @@ def _rounds(record) -> None:
         with st.expander(f"Revision history ({len(record.rounds)} rounds)"):
             for r in record.rounds:
                 failed = [g.gate_name for g in r.gate_results if g.status.value == "failed"]
-                st.markdown(f"**Round {r.revision}** · {r.word_count} words · "
+                st.markdown(f"**{f'Email {r.piece}, round' if r.piece else 'Round'} {r.revision}** · {r.word_count} words · "
                             + (f"failed: {', '.join(failed)}" if failed else "all gates passed"))
                 for note in r.change_notes:
                     st.caption(f"  ✎ {note}")
@@ -329,7 +342,8 @@ def render_output(job_id: str, where: str) -> None:
             st.code(text, language=None, wrap_lines=True)
         st.markdown("**Body**")
         st.code(package["draft"]["body"], language=None, wrap_lines=True)
-        if record.status in stats.COMPLETE_STATUSES and (output_dir / "session.json").exists():
+        if (record.status in stats.COMPLETE_STATUSES and (output_dir / "session.json").exists()
+                and not package.get("sequence_length")):
             _microcopy_after(job_id, where, has_copy=bool(package.get("microcopy_selected")))
         other = {f: c for f, c in (package.get("microcopy") or {}).items() if c}
         if other:
@@ -451,9 +465,18 @@ with tab_generate:
             c1, c2 = st.columns(2)
             audience = c1.text_area("Audience", key=f"aud-{k}", height=100)
             notes = c2.text_area("Must follow", key=f"notes-{k}", height=100)
-            c1, c2, c3 = st.columns([1, 1, 3])
-            min_words = c1.number_input("Min words", MIN_WORDS, MAX_WORDS, step=50, key=f"wmin-{k}")
-            max_words = c2.number_input("Max words", MIN_WORDS, MAX_WORDS, step=50, key=f"wmax-{k}")
+            default_n = None if custom_type else config.sequence_length(fmt)
+            if default_n:
+                c0, c1, c2, c3 = st.columns([1, 1, 1, 3])
+                _seed(f"seq-{k}", default_n)
+                seq_n = c0.number_input("Emails", 2, 10, step=1, key=f"seq-{k}",
+                                        help="How many emails the sequence has. Each is written and checked on its own.")
+            else:
+                c1, c2, c3 = st.columns([1, 1, 3])
+                seq_n = None
+            per = " per email" if default_n else ""
+            min_words = c1.number_input(f"Min words{per}", MIN_WORDS, MAX_WORDS, step=50, key=f"wmin-{k}")
+            max_words = c2.number_input(f"Max words{per}", MIN_WORDS, MAX_WORDS, step=50, key=f"wmax-{k}")
             angle_hint = c3.text_input("Angle hint (optional)", key=f"hint-{k}")
             st.caption(
                 "Audience, word range and must-follow are pre-filled from the client profile (Knowledge base → "
@@ -516,6 +539,7 @@ with tab_generate:
                 brief = Brief(client_id=client_id, goal=goal.strip(), audience=audience.strip(), format=fmt,
                               format_description=fmt_desc, icp=picked_icp.name if picked_icp else None,
                               word_range=WordRange(min=int(min_words), max=int(max_words)),
+                              sequence_length=int(seq_n) if seq_n else None,
                               angle_hint=angle_hint.strip() or None, notes=notes.strip() or None,
                               plan_item_id=plan_pick)
                 st.session_state.pop("preflight", None)
@@ -572,10 +596,14 @@ with tab_generate:
             st.session_state["angle_pick"] = chosen_angle
             st.rerun()
         angle_pick = st.session_state.get("angle_pick")
-        mode = st.segmented_control(
-            "Micro-copy", list(MICROCOPY_MODES), key=f"mcmode-{job_id}", default="pick",
-            format_func=MICROCOPY_MODES.get, help="Subject lines, openers, calls to action and so on. If you skip, "
-                                                  "you can still add them to the finished piece.")
+        if session.brief.sequence_length or not config.microcopy_fields(session.brief.format, {"x": 1}):
+            mode = "skip"  # a sequence has no micro-copy menu
+            st.caption(f"A sequence of {session.brief.sequence_length} emails: each is written and checked on its own.")
+        else:
+            mode = st.segmented_control(
+                "Micro-copy", list(MICROCOPY_MODES), key=f"mcmode-{job_id}", default="pick",
+                format_func=MICROCOPY_MODES.get, help="Subject lines, openers, calls to action and so on. If you skip, "
+                                                      "you can still add them to the finished piece.")
         skipping = mode == "skip"
         with st.container(horizontal=True, vertical_alignment="center"):
             if st.button("← Edit brief", type="tertiary"):
@@ -817,6 +845,61 @@ def profile_editor(client_id: str, client_dir: Path, reviewer: str) -> None:
 
 
 
+def _where(e) -> str:
+    return " · ".join([e.source_doc] + [s.split(" · ")[0] for s in e.also_sources])
+
+
+@st.fragment
+def needs_you_view(client_id: str, client_dir: Path, reviewer: str) -> None:
+    """The few facts the agent review left for a person, most important first."""
+    no_name = not reviewer.strip()
+    if waiting := kb_triage.unreviewed(client_dir):
+        with st.container(border=True, horizontal=True, vertical_alignment="center"):
+            st.markdown(f"**{waiting} fact(s) haven't had the agent review yet.**")
+            if st.button("Run agent review", type="primary", key=f"triage-{client_id}"):
+                st.session_state["flash"] = _agent_review(client_dir)
+                st.rerun()
+    index_path = client_dir / "knowledge_base" / "kb_index.json"
+    entries = [KBEntry(**e) for e in json.loads(index_path.read_text(encoding="utf-8"))] if index_path.exists() else []
+    by_agent = sum(1 for e in entries if e.status == "verified" and e.confirmed_by == kb_triage.AGENT)
+    by_people = sum(1 for e in entries if e.status == "verified" and e.confirmed_by != kb_triage.AGENT)
+    queue = kb_triage.needs_you(client_dir)
+    st.caption(f"{by_agent} fact(s) confirmed by the agent · {by_people} by a person · {len(queue)} waiting. "
+               "The agent confirms only facts its source states plainly, with no figure, price, date, named "
+               "person or outcome resting on one source. See and undo its calls under All facts.")
+    if not queue:
+        st.success("Nothing needs you right now.")
+        return
+    shown_key = f"ny-shown-{client_id}"
+    shown = st.session_state.get(shown_key, kb_triage.NEEDS_YOU_SHOWN)
+    for e in queue[:shown]:
+        with st.container(border=True):
+            st.markdown(f"**{e.claim}**")
+            st.caption(f"Why you: {e.triage_reason}  \nSource: {_where(e)}"
+                       + (f"  \nSource says: _“{e.evidence}”_" if e.evidence else ""))
+            with st.container(horizontal=True, vertical_alignment="center"):
+                if st.button("Confirm", type="primary", key=f"ny-ok-{e.id}", disabled=no_name):
+                    kb_verify.approve(client_dir, [e.id], reviewer.strip())
+                    st.rerun()
+                if st.button("Reject", key=f"ny-no-{e.id}", disabled=no_name):
+                    kb_verify.reject(client_dir, [e.id], reviewer.strip())
+                    st.rerun()
+                with st.popover("Edit", disabled=no_name):
+                    text = st.text_area("Fact", e.claim, key=f"ny-text-{e.id}")
+                    if st.button("Save and confirm", type="primary", key=f"ny-edit-{e.id}"):
+                        kb_triage.edit_and_confirm(client_dir, e.id, text, reviewer.strip())
+                        st.rerun()
+    more = len(queue) - shown
+    with st.container(horizontal=True, vertical_alignment="center"):
+        if more > 0 and st.button(f"Show {min(more, kb_triage.NEEDS_YOU_SHOWN)} more", key=f"ny-more-{client_id}"):
+            st.session_state[shown_key] = shown + kb_triage.NEEDS_YOU_SHOWN
+            st.rerun(scope="fragment")
+        if no_name:
+            st.caption("Enter your name in the sidebar to confirm or reject.")
+        elif more > 0:
+            st.caption(f"{more} more, lower priority. Drafts don't use them until someone confirms them.")
+
+
 @st.fragment
 def kb_review(client_id: str, client_dir: Path, reviewer: str) -> None:
     """The fact table. A fragment, so ticking boxes and filtering don't rerun the whole app."""
@@ -851,6 +934,7 @@ def kb_review(client_id: str, client_dir: Path, reviewer: str) -> None:
 
     select_all = st.checkbox(f"Select all {len(shown)} shown", key=f"all-{client_id}")
     rows = [{"select": select_all, "id": e.get("id"), "status": FACT_STATUS.get(e.get("status", "pending")),
+             "agent": TRIAGE_LABEL.get(e.get("triage") or "", "—"), "why": e.get("triage_reason") or "",
              **{k: e.get(k) for k in ("claim", "source_doc", "location", "verified_at", "confirmed_by")}}
             for e in shown]
     edited = st.data_editor(
@@ -859,6 +943,8 @@ def kb_review(client_id: str, client_dir: Path, reviewer: str) -> None:
         column_config={"select": st.column_config.CheckboxColumn("Select", width="small"),
                        "id": None,
                        "status": st.column_config.TextColumn("Status", width="small"),
+                       "agent": st.column_config.TextColumn("Agent's call", width="small"),
+                       "why": st.column_config.TextColumn("Why", width="medium"),
                        "claim": st.column_config.TextColumn("Fact", width="large"),
                        "source_doc": "Source", "location": "Where", "verified_at": "Decided on",
                        "confirmed_by": "By"},
@@ -885,6 +971,14 @@ def kb_review(client_id: str, client_dir: Path, reviewer: str) -> None:
             kb_verify.restore(client_dir, deleted)
             st.session_state["flash"] = f"Sent {len(deleted)} fact(s) back for review."
             st.rerun()
+        with st.popover("Undo agent review", disabled=no_name):
+            st.markdown("Put every decision the agent made back to waiting for review?")
+            st.caption("Merged duplicates come back as separate facts and the agent's confirmations are withdrawn. "
+                       "Anything a person confirmed or rejected stays as it is.")
+            if st.button("Yes, undo", type="primary", key=f"undo-triage-{client_id}"):
+                n = kb_triage.undo(client_dir)
+                st.session_state["flash"] = f"Undid {n} agent decision(s)."
+                st.rerun()
         st.caption("Enter your name in the sidebar to verify or delete." if no_name else
                    "Only verified facts can appear in drafts.")
 
@@ -893,12 +987,16 @@ with tab_kb:
     index_path = client_dir / "knowledge_base" / "kb_index.json"
     all_entries = json.loads(index_path.read_text(encoding="utf-8")) if index_path.exists() else []
     set_aside = [e for e in all_entries if e.get("status") == "excluded"]
-    pending_n = sum(1 for e in all_entries if e.get("status", "pending") == "pending")
+    needs_n = sum(1 for e in all_entries if e.get("status") == "pending" and e.get("triage") == "needs_you")
     proposed_n = sum(1 for i in content_plan.load(client_dir) if i.status == "proposed")
-    review_tab, aside_tab, plan_tab, add_tab, profile_tab = st.tabs([
-        f"Review facts ({pending_n} to review)" if pending_n else "Review facts",
+    needs_tab, review_tab, aside_tab, plan_tab, add_tab, profile_tab = st.tabs([
+        (f"Needs you (top {kb_triage.NEEDS_YOU_SHOWN} of {needs_n})" if needs_n > kb_triage.NEEDS_YOU_SHOWN
+         else f"Needs you ({needs_n})" if needs_n else "Needs you"), "All facts",
         f"Set aside ({len(set_aside)})",
         f"Content plan ({proposed_n} to review)" if proposed_n else "Content plan", "Add facts", "Client profile"])
+
+    with needs_tab:
+        needs_you_view(client_id, client_dir, reviewer)
 
     with review_tab:
         kb_review(client_id, client_dir, reviewer)
@@ -907,7 +1005,7 @@ with tab_kb:
         if not set_aside:
             st.caption("Nothing set aside.")
         else:
-            st.caption("Style rules, audience notes and reference material found in the documents. They never "
+            st.caption("Style rules, audience notes, reference material and duplicates the agent merged. They never "
                        "reach a draft and don't need review. Send one back if it's really a claim about the client.")
             aside_rows = [{"select": False, "id": e["id"], "kind": e.get("kind", ""), "claim": e.get("claim"),
                            "why": e.get("exclusion_reason") or "", "source_doc": e.get("source_doc")}
@@ -986,7 +1084,7 @@ with tab_kb:
                 _save_uploads(uploads, client_dir)
                 st.session_state["flash"] = _compile(client_dir)
                 st.rerun()
-            st.caption("Only claims about the client go to review; style rules and reference material are set aside.")
+            st.caption("Compiling runs the agent review: only the few facts it can't settle reach Needs you.")
 
     with profile_tab:
         profile_editor(client_id, client_dir, reviewer)

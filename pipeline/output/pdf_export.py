@@ -122,6 +122,14 @@ def render_package_pdf(
                 suffix = f" <i>({_escape(strategy)})</i>" if strategy else ""
                 story.append(Paragraph(f"&bull; {text}{suffix}", styles["candidate"]))
 
+    agent_facts = [m for m in package.get("provenance_manifest") or []
+                   if str(m.get("confirmed_by") or "").startswith("agent:")]
+    if agent_facts:
+        story.append(Paragraph("Facts confirmed by the agent, not a person", styles["h2"]))
+        for m in agent_facts:
+            story.append(Paragraph(f"&bull; {_escape(str(m.get('claim', '')))} "
+                                   f"<i>({_escape(str(m.get('source_doc') or ''))})</i>", styles["note"]))
+
     compliance = package.get("compliance_report", {})
     gates = compliance.get("gates", [])
     if gates:

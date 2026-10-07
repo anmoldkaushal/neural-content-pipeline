@@ -5,16 +5,16 @@
 | Stage | File | Why it exists |
 |---|---|---|
 | Provenance gate | `pipeline/kb/provenance.py` | Hard-blocks a job before any drafting if the client's facts aren't confirmed+sourced+dated. Ported from `verify_tenant.py`'s refuse-loudly behavior. |
-| Preflight | `pipeline/stages/preflight.py` | Runs before a job exists: a format that doesn't match the goal, or brief asks that contradict a client rule. A brief like that fails the same gate on every revision; this finds it for one cheap call instead of a spent retry budget. A human fixes the brief or proceeds (recorded; client rules win). |
+| Preflight | `pipeline/stages/preflight.py` | Runs before a job exists: a format that doesn't match the goal, a goal asking for several pieces from a one-piece format (send it to `email_sequence`), or brief asks that contradict a client rule. A brief like that fails the same gate on every revision; this finds it for one cheap call instead of a spent retry budget. A human fixes the brief or proceeds (recorded; client rules win). |
 | Intake | `pipeline/stages/intake.py` | Catches mechanical brief/KB gaps (and an unapproved plan item) before spending an LLM call. |
 | Angle menu | `pipeline/stages/angle_menu.py` | 2-3 cheap candidates so a bad direction never costs a full draft+gate cycle. Sees the content plan item and the most relevant client context. |
 | Tone select | `pipeline/stages/tone_select.py` | A dropdown-level decision from the client's pre-approved presets. A human may type a one-off tone (recorded as `ad_hoc` on the job and judged by voice_critic) or ask for one suggestion; it becomes a preset only when a human saves it. |
 | ICP (optional) | `pipeline/icps.py` | Who the piece is for, picked from the client's reviewed ICPs. Rendered once into `Brief.icp_profile` at `start` and passed to angle, micro-copy, synthesis, draft, tone suggestion and `voice_critic`, each time under a "targeting context, not facts" guard. The entailment and `claims_critic` gates are unchanged, so a pain point can shape an angle but never becomes a claim. |
 | Micro-copy menu (optional) | `pipeline/stages/microcopy.py` | Runs after the angle is chosen and before drafting: per-format fields (`formats` in `config/pipeline_config.yaml`), each option pre-flagged by the deterministic lint so the human picks copy the gates will accept. Skippable (`choose_angle` then `execute` with no copy); a finished job can get copy afterwards via `build_microcopy_menu_after` -> `attach_microcopy`, which re-runs `microcopy_lint` and the two judged gates on the draft with the copy on top and leaves the package untouched if any fails. |
 | Brief synthesis | `pipeline/stages/brief_synthesis.py` | Compiles one targeted working spec instead of handing the drafter four raw documents. |
-| Draft | `pipeline/stages/draft.py` | The one full generation pass. The writer gets everything it will be judged on first: the client's rules (`pipeline/kb/rulebook.py`: style guide, tone, banned lists, do-not-say, framing rules, word range), verified facts with their text, the plan item, relevant context, and approved or past examples for voice. |
+| Draft | `pipeline/stages/draft.py` | The one full generation pass. The writer gets everything it will be judged on first: the client's rules (`pipeline/kb/rulebook.py`: style guide, tone, banned lists, do-not-say, framing rules, word range), verified facts with their text, the plan item, relevant context, and approved or past examples for voice. A sequence format (`email_sequence`, `sequence: N` in config) runs draft -> gates -> revise once per email: the angle is an arc with one step per email, each email is written knowing the ones before it, has its own retry budget, and the package holds every email under its own heading (`package["sequence"]`). A real brief for "drip emails 1 to 5" sent as one 100-200-word email squeezed a five-email arc into one body and failed on every round. No micro-copy menu for sequences. |
 | Gates (style/constraints/entailment/claims/voice) | `pipeline/gates/` | Independent passes -- never the same call that wrote the draft, to avoid self-grading bias. |
-| Revise loop | `pipeline/stages/revise.py` + `draft.revise_draft` | Bounded retry (default 2/gate). A revision EDITS the failed draft, given every failing gate's findings in one round plus what earlier rounds were told; it used to regenerate from the spec told only about the first failing gate. When any gate exhausts its budget the job escalates naming every failing gate; every round is kept (`rounds`, `drafts/rev-N.json`). |
+| Revise loop | `pipeline/stages/revise.py` + `draft.revise_draft` | Bounded retry (default 3 drafts per gate, so two revisions; 2 gave each email in a sequence a single revision while three reviewers pulled at it). A revision EDITS the failed draft, given every failing gate's findings in one round plus what earlier rounds were told, and is told the client's banned terms win over any wording a finding suggests; it used to regenerate from the spec told only about the first failing gate. When any gate exhausts its budget the job escalates naming every failing gate; every round is kept (`rounds`, `drafts/rev-N.json`). |
 | Finish by hand | `run_job.finish_by_hand` | An escalated draft a human edits is packaged after the deterministic gates; the judged gates aren't re-run (the human is that judgement). |
 | Package | `pipeline/stages/package.py` | The deliverable is the bundle (draft + provenance + compliance report), not just prose. |
 
@@ -44,7 +44,18 @@ The orchestrator runs in three phases (`start` -> `build_microcopy_menu` -> `exe
 - **`voice_critic`** -- LLM judge, independent call, given the same style guide and full tone
   descriptions the writer got (it used to see preset names only). Reports SKIPPED (never PASSED)
   if the transport is unavailable -- same discipline as `llm_judge.py`. Judged within the client's
-  framing rules and the brief's must-follow, so it can't demand what those forbid.
+  framing rules and the brief's must-follow, so it can't demand what those forbid. It judges voice
+  only: it gets the verified facts the writer may state and is told accuracy is claims_critic's job
+  (it had failed confirmed facts as "unconfirmed"), and on a revision it gets its own earlier notes
+  so it can't ask for the opposite of what it asked before (it had told the writer to stop
+  describing the reader, then to open by describing the reader).
+- **One rulebook for every judge** (`judged.shared_rules`): voice, framing and claims judges all get the
+  client's banned terms (never to suggest one as a fix) and the verified facts the writer may state (a
+  matching statement is not 'unconfirmed' unless a rule forbids the topic outright). A real client's job
+  failed when the voice judge, never shown the do-not-say list, told the writer to add "not a
+  conference or a networking event", and the framing judge failed confirmed agenda facts that the
+  voice judge had asked for. The framing judge also reads "don't address X" as broken only by
+  addressing X, never as a demand to exclude X.
 - **Both judged gates** (`voice_critic`, `client_constraints_critic`) mark each note blocking or
   minor (`pipeline/gates/judged.py`); only a blocking note fails, minor notes ride on the result for
   the human. A note with no severity counts as blocking. A failed revise round gets every failing
@@ -52,7 +63,15 @@ The orchestrator runs in three phases (`start` -> `build_microcopy_menu` -> `exe
 
 ## The knowledge layers a writer reads
 
-- **Facts** (`knowledge_base/kb_index.json`) -- what a draft may *state*. Human-verified.
+- **Facts** (`knowledge_base/kb_index.json`) -- what a draft may *state*. Confirmed by a person, or
+  by the agent review (`pipeline/stages/kb_triage.py`) when the fact is low-risk and matched to its
+  source. The review runs after compile because a client with a stack of call notes produced 300+
+  near-identical facts to review one by one. It merges duplicates (keeping every source), checks
+  each fact against its document with an independent call, then matches the quoted passage and any
+  figures in code. A fact with a conflict, a price/date/number/guarantee/outcome/named person from
+  one source, informal-only support, or an imperfect match goes to Needs you, ranked; the UI shows
+  ten. Agent confirmations are recorded as `agent:kb-review`, listed in the package and PDF, and
+  undoable (`kb-review --undo`). entailment and claims_critic still check every draft.
 - **Context** (`knowledge_base/context/`, `pipeline/kb/context.py`) -- each source document in
   sections, with a role (strategy, past_content, brand, notes) and summary. The sections most
   relevant to a piece (lexical match, under `context_budget_chars`) go to the angle menu,

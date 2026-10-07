@@ -41,7 +41,10 @@ class Brief(BaseModel):
     audience: str
     format: str  # e.g. "blog_post", "email", "social_post", "landing_page", or a client's custom type
     format_description: Optional[str] = None  # what a custom content type is, for the prompts
-    word_range: Optional[WordRange] = None
+    word_range: Optional[WordRange] = None  # per piece, for a sequence
+    # How many pieces a sequence format writes (email_sequence: Email 1..N, each gated on its own).
+    # None for a single-piece format; resolved from config's `sequence` when the format has one.
+    sequence_length: Optional[int] = None
     icp: Optional[str] = None  # name of the client ICP this piece is written for, if one was picked
     # The ICP rendered as prompt text (pipeline/icps.py), resolved once at start so a session is
     # self-contained even if the profile changes later. Targeting context, never a claim.
@@ -91,6 +94,18 @@ class KBEntry(BaseModel):
     # with a reason; "internal" and "personal" are never stored by kb_compile. See KB_KINDS.
     kind: str = "claim"
     exclusion_reason: Optional[str] = None
+    # Set by the agent review (pipeline/stages/kb_triage.py). also_sources: where merged duplicates
+    # of this fact were found ("doc · location"). original_claim: the extracted wording before the
+    # agent merged duplicates under one wording, kept so the review can be undone. evidence: the
+    # passage the fact was checked against, quoted from the source.
+    also_sources: list[str] = Field(default_factory=list)
+    original_claim: Optional[str] = None
+    evidence: Optional[str] = None
+    # "auto_verified" | "needs_you" | "unsupported" | "duplicate" | "not_client_fact"; None until
+    # reviewed. triage_priority orders the "needs you" queue (higher first).
+    triage: Optional[str] = None
+    triage_reason: Optional[str] = None
+    triage_priority: Optional[int] = None
 
 
 KB_KINDS = {
@@ -192,6 +207,7 @@ class Draft(BaseModel):
     revision: int = 0
     # What the writer says it changed on a revision pass; empty on a first draft.
     change_notes: list[str] = Field(default_factory=list)
+    piece: Optional[int] = None  # 1-based position in a sequence; None for a single piece
 
 
 class GateStatus(str, Enum):
@@ -216,6 +232,7 @@ class RevisionRound(BaseModel):
     word_count: int
     gate_results: list[GateResult] = Field(default_factory=list)
     change_notes: list[str] = Field(default_factory=list)
+    piece: Optional[int] = None  # which email of a sequence this round drafted
 
 
 class JobRecord(BaseModel):

@@ -43,10 +43,16 @@ def formats() -> dict[str, dict[str, Any]]:
 def microcopy_fields(format_: str | None, fallback: dict[str, int]) -> dict[str, int]:
     """Field -> candidate count for a content type. Unknown or missing formats get the generic
     title/subtitle/hook/cta set, each capped by microcopy_caps."""
-    spec = formats().get(format_ or "", {}).get("microcopy")
-    if spec:
-        return {str(k): int(v) for k, v in spec.items()}
+    fmt = formats().get(format_ or "", {})
+    if "microcopy" in fmt:  # an explicit empty mapping means the format has no micro-copy
+        return {str(k): int(v) for k, v in (fmt["microcopy"] or {}).items()}
     return {name: microcopy_cap(name, count) for name, count in fallback.items()}
+
+
+def sequence_length(format_: str | None) -> int | None:
+    """How many pieces a sequence format writes (email_sequence: 5), or None for one piece."""
+    value = formats().get(format_ or "", {}).get("sequence")
+    return int(value) if value else None
 
 
 def default_word_range(format_: str) -> tuple[int, int] | None:

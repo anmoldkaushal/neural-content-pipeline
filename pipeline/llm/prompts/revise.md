@@ -5,6 +5,8 @@ findings from every check that failed, and the client's rules. Edit the draft; d
   sentence; where it names a pattern, remove every instance of the pattern, not just the one quoted.
 - Keep everything that wasn't flagged: structure, facts, keyword, and the sentences that work.
 - Do not reintroduce anything an earlier round was told to fix.
+- A finding's suggested wording is a suggestion: if it would break a client rule or use a banned
+  term, fix the problem it names another way. The client's rules always win.
 - Still follow every client rule and land inside the word range. If a fix removes length, add
   substance from the verified facts or the context's direction, not filler.
 - State facts about the client only from VERIFIED FACTS; client context is direction, not fact.

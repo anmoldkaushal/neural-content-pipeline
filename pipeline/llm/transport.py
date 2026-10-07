@@ -136,4 +136,9 @@ def call_json(
     try:
         return json.loads(text), result
     except json.JSONDecodeError as exc:
-        return None, LLMResult(available=False, error=f"model did not return valid JSON: {exc}")
+        # A valid value followed by stray text (a trailing note, a second fence) is still the answer.
+        try:
+            value, _ = json.JSONDecoder().raw_decode(text)
+            return value, result
+        except json.JSONDecodeError:
+            return None, LLMResult(available=False, error=f"model did not return valid JSON: {exc}")

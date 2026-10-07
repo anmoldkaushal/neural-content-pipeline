@@ -6,13 +6,33 @@ from __future__ import annotations
 
 from typing import Any
 
-from pipeline.schemas import GateResult, GateStatus
+from pipeline.schemas import ClientProfile, GateResult, GateStatus
 
 SEVERITY_FORMAT = (
     'Each note is an object: {"severity": "blocking" or "minor", "note": "..."}. Mark a note blocking '
     "only if the piece should not go to a reader with it; everything else is minor. Name the exact "
     "sentence or pattern, not a vague impression."
 )
+
+
+def banned_terms(profile: ClientProfile) -> list[str]:
+    """Every term a draft may never contain: the client's do-not-say list and extra banned words
+    and phrases (the house list is enforced by style_lint and already reaches the writer)."""
+    return list(dict.fromkeys([*profile.do_not_say, *profile.banned_words, *profile.banned_phrases]))
+
+
+def shared_rules(profile: ClientProfile, facts: str = "") -> str:
+    """What every judge is told, so no two judges hold the writer to different rules: the words it
+    may never use (so no judge suggests one as a fix) and the verified facts it may state (so no
+    judge fails a confirmed fact as unconfirmed)."""
+    out = ""
+    if terms := banned_terms(profile):
+        out += ("Terms the draft must never contain. Never suggest a fix that uses one, even to say what the "
+                f"piece is not: {'; '.join(terms)}\n")
+    if facts.strip():
+        out += ("Verified facts the writer may state. A statement matching one is allowed and is not "
+                "'unconfirmed', unless a rule forbids mentioning that topic at all:\n" + facts.strip() + "\n")
+    return out
 
 
 def _note(item: Any) -> tuple[str, str]:

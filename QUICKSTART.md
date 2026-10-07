@@ -42,10 +42,14 @@ want that coverage; everything else (including text-layer PDF extraction) runs r
    few pages at a time so long decks are read to the end), **context** (the document itself, in
    sections with a role and summary, under `knowledge_base/context/`, which the writer reads for
    direction) and **plan** (any planned pieces -- article lists, keyword clusters, email series --
-   proposed into `content_plan.yaml`).
-5. **Verify the delta**: `python -m pipeline.cli kb-verify --client acme` -- shows only new or
-   changed facts, not the whole knowledge base. Approving stamps `provenance.json` and unblocks
-   the client for drafting. Use `--approve-all` to skip the interactive per-entry prompt.
+   proposed into `content_plan.yaml`). Compile then runs the **agent review** (`--no-review` to
+   skip it): duplicates are merged, each fact is checked against its document, plain low-risk facts
+   are confirmed by the agent (`confirmed_by: agent:kb-review`), facts not about the client are set
+   aside, and the rest are ranked for you. It prints the top ten. `kb-review --client acme` runs it
+   on anything not yet reviewed; `kb-review --undo` puts every agent decision back.
+5. **Check what needs you**: confirm or reject the ranked facts, in the UI (Knowledge base -> Needs
+   you) or with `python -m pipeline.cli kb-verify --client acme`, which lists every pending fact.
+   Confirming stamps `provenance.json` with your name.
 6. **Approve the plan**: `python -m pipeline.cli plan --client acme`, then
    `plan-approve --client acme --all` (or name item ids). Edit titles, keywords or order in
    `content_plan.yaml` directly if the extraction got them wrong.
@@ -107,8 +111,11 @@ choose an angle, then the micro-copy (options marked ⚠ would fail the micro-co
 options fit the draft, and your picks are gated before they join the package and PDF. The result
 shows with copy buttons, a PDF download, the revision history, and an Approve as a voice example
 button; an escalated job offers Finish it yourself; "Reuse this brief" refills the form for another
-run. **Knowledge base**: tick facts and Verify or Delete them (enter your name in the sidebar
-first; it is recorded as `confirmed_by`; a deleted fact can be sent back to review), review the
+run. **Knowledge base**: Needs you shows the ten facts the agent review couldn't settle, most
+important first, each with the agent's reason and the source passage: Confirm, Reject, or Edit and
+confirm (enter your name in the sidebar first; it is recorded as `confirmed_by`). All facts shows
+every fact with the agent's call and why, lets you Verify or Delete in bulk (a deleted fact can be
+sent back to review), and has Undo agent review. Also: review the
 content plan (Approve / Reject), add a fact you know first-hand, or upload documents and compile.
 Deleted facts are kept as `rejected`, so a later compile won't propose
 them again. Compiling labels every extracted statement; only claims about the client
@@ -119,6 +126,15 @@ or micro-copy step; Learn from the judges (suggest and adopt rules). **Client pr
 Knowledge base): edit each section in place and mark it Reviewed or Final, and see each source
 document's role and summary; jobs on a non-final profile say so in their notes. **New client**: the same steps as the
 CLI below (scaffold, draft profile from documents, compile), then review in Knowledge base.
+
+## Email sequences
+
+Pick **Email sequence** as the content type to write several emails as one job (5 by default;
+the "Emails" box changes it). The word range is per email. Each angle is an arc with one step per
+email; each email is drafted knowing the earlier ones and checked on its own, and the result holds
+them all under "EMAIL 1 OF 5" headings. From the CLI, set `format: email_sequence` (and optionally
+`sequence_length: 3`) in the brief. Asking for several emails with the single Email type is caught
+before drafting.
 
 ## Picking an angle, tone or ICP from the CLI
 

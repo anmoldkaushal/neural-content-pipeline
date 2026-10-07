@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+from pipeline.gates import judged
 from pipeline.llm.transport import ClaudeTransport, call_json
 from pipeline.schemas import ClientProfile, Draft, GateResult, GateStatus, KBEntry
 
@@ -31,6 +32,7 @@ def run(
         f"{template}\n\n"
         f"Client: {profile.company_name} ({profile.industry})\n\n"
         f"Verified facts:\n{facts}\n\n"
+        f"{judged.shared_rules(profile)}\n"
         f"--- DRAFT ---\n{draft.body}\n--- END DRAFT ---"
     )
 

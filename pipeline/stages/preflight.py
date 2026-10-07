@@ -1,7 +1,8 @@
 """Catches a brief that can't pass before anything is drafted. Two checks:
 
 - format fit (deterministic): the goal names a content type the brief's format isn't ("write the
-  first two blog posts" sent as an 80-word social_post);
+  first two blog posts" sent as an 80-word social_post), or asks for several pieces from a format
+  that writes one ("the whole series of drip emails (Email 1 to 5)" sent as one email);
 - rule conflicts (one cheap model call): the brief asks for something the client's framing rules
   or do-not-say list forbid ("don't dwell on safety" against a rule requiring a medical caveat).
 
@@ -31,21 +32,37 @@ _FORMAT_WORDS = {
 }
 
 
+# A sequence format answers to its single-piece name ("emails" fits email_sequence).
+_SAME_KIND = {"email_sequence": "email"}
+_NUMBER = r"(?:\d+|two|three|four|five|six|seven|eight|nine|ten)"
+# A goal that asks for more than one piece.
+_SEVERAL = re.compile(
+    rf"\b(?:series|sequence|drip|campaign of|set of)\b|\b{_NUMBER}\s+(?:\w+\s+)?(?:e-?mails|posts|messages|articles|blogs)\b"
+    rf"|\b(?:e-?mail|post|message)s?\s*#?\d+\s*(?:to|-|–|through)\s*#?\d+\b",
+    re.IGNORECASE,
+)
+
+
 def format_issues(brief: Brief) -> list[str]:
     named = [fmt for fmt, pattern in _FORMAT_WORDS.items() if re.search(pattern, brief.goal, re.IGNORECASE)]
-    if not named or brief.format in named:
-        return []
-    issues = [
-        f"The goal asks for {' / '.join(n.replace('_', ' ') for n in named)} but the format is "
-        f"{brief.format.replace('_', ' ')}. Change the content type, or reword the goal."
-    ]
-    default = config.default_word_range(named[0])
-    if default and brief.word_range and brief.word_range.max < default[0]:
-        issues.append(
-            f"The word range ({brief.word_range.label()}) is far below a typical "
-            f"{named[0].replace('_', ' ')} ({default[0]}-{default[1]} words)."
-        )
-    return issues
+    if named and brief.format not in named and _SAME_KIND.get(brief.format) not in named:
+        issues = [
+            f"The goal asks for {' / '.join(n.replace('_', ' ') for n in named)} but the format is "
+            f"{brief.format.replace('_', ' ')}. Change the content type, or reword the goal."
+        ]
+        default = config.default_word_range(named[0])
+        if default and brief.word_range and brief.word_range.max < default[0]:
+            issues.append(
+                f"The word range ({brief.word_range.label()}) is far below a typical "
+                f"{named[0].replace('_', ' ')} ({default[0]}-{default[1]} words)."
+            )
+        return issues
+    if _SEVERAL.search(brief.goal) and not config.sequence_length(brief.format):
+        fix = ('Pick "email sequence" to write them as one job'
+               if brief.format == "email" else "Run one job per piece")
+        return [f"The goal asks for several pieces, but {brief.format.replace('_', ' ')} writes one. "
+                f"{fix}, or ask for a single piece."]
+    return []
 
 
 def rule_conflicts(

@@ -30,6 +30,8 @@ def run(
     tone: Optional[ToneChoice] = None,
     must_follow: Optional[str] = None,
     reader_profile: Optional[str] = None,
+    facts: str = "",
+    earlier_notes: Optional[list[str]] = None,
 ) -> GateResult:
     transport = transport or ClaudeTransport()
     template = _PROMPT_PATH.read_text(encoding="utf-8")
@@ -51,6 +53,13 @@ def run(
         + f"{style_guide}"
         f"{judged.SEVERITY_FORMAT}\n"
         + (f"Limits the writer had to work within:\n{limits}" if limits else "")
+        # The same banned terms and verified facts every judge gets (judged.shared_rules): without the
+        # facts it failed confirmed facts as unbacked; without the terms it told the writer to add
+        # "not a conference or a networking event", both do-not-say terms.
+        + f"\n{judged.shared_rules(profile, facts)}"
+        # What this judge asked for in earlier rounds, so it can't ask for the opposite now.
+        + ("\nYour notes on earlier drafts of this piece (the writer has acted on them; don't reverse "
+           "them):\n" + "".join(f"- {n}\n" for n in earlier_notes) if earlier_notes else "")
         + "\n"
         f"--- DRAFT ---\n{draft.body}\n--- END DRAFT ---"
     )

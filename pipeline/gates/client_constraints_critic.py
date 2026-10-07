@@ -15,7 +15,7 @@ _PROMPT_PATH = Path(__file__).resolve().parent.parent / "llm" / "prompts" / "cli
 
 
 def run(
-    draft: Draft, profile: ClientProfile, transport: Optional[ClaudeTransport] = None
+    draft: Draft, profile: ClientProfile, transport: Optional[ClaudeTransport] = None, facts: str = ""
 ) -> GateResult:
     if not profile.do_not_frame:
         return GateResult(gate_name="client_constraints_critic", status=GateStatus.PASSED, detail="no framing rules defined")
@@ -28,6 +28,7 @@ def run(
         f"{template}\n\n"
         f"Client: {profile.company_name} ({profile.industry})\n\n"
         f"Framing rules this draft must not violate:\n{rules_block}\n\n"
+        f"{judged.shared_rules(profile, facts)}\n"
         f"{judged.SEVERITY_FORMAT}\n\n"
         f"--- DRAFT ---\n{draft.body}\n--- END DRAFT ---"
     )
