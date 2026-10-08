@@ -123,6 +123,8 @@ def _restore_brief(session: JobSession) -> None:
         ss[f"wmin-{k}"], ss[f"wmax-{k}"] = _clamp_words(b.word_range.min), _clamp_words(b.word_range.max)
     if b.sequence_length:
         ss[f"seq-{k}"] = b.sequence_length
+    ss[f"seqplan-{k}"], ss[f"seqnotes-{k}"] = list(b.plan_item_ids), b.sequence_notes or ""
+    ss[f"sentmax-{k}"] = b.sentence_max or 0
     ss[f"hint-{k}"], ss[f"notes-{k}"] = b.angle_hint or "", b.notes or ""
     tone = session.tone
     if tone is None:
@@ -224,18 +226,30 @@ def _microcopy_picker(session: JobSession, key: str) -> dict[str, str]:
     return selected
 
 
-def _microcopy_after(job_id: str, where: str, has_copy: bool) -> None:
+def _microcopy_after(job_id: str, where: str, has_copy: bool, emails: int = 0) -> None:
     """Micro-copy for a finished job: generate a menu that fits the draft, pick, then the picks are
-    gated and added to the package (nothing changes if a gate fails)."""
+    gated and added to the package (nothing changes if a gate fails). For a sequence (`emails`),
+    alternatives for one email's subject line and preheader."""
     open_key = f"mcafter-{where}-{job_id}"
     run_n = st.session_state.get(open_key)
+    piece = st.session_state.get(f"{open_key}-piece") if emails else None
     if run_n is None:
-        label = "Change micro-copy" if has_copy else "Add micro-copy"
-        if st.button(label, key=f"{where}-mcbtn-{job_id}",
-                     help="Generates options that fit this draft. Your picks are checked before they're added."):
+        if emails:
+            with st.container(horizontal=True, vertical_alignment="bottom"):
+                piece = st.selectbox("Email", range(1, emails + 1), key=f"{open_key}-pick",
+                                     format_func=lambda i: f"Email {i}", width=140)
+                go = st.button("More subject line options", key=f"{where}-mcbtn-{job_id}",
+                               help="Alternatives for this email's subject line and preheader, fitted to it and "
+                                    "kept apart from the other emails' subjects. Your pick is checked before it's added.")
+        else:
+            label = "Change micro-copy" if has_copy else "Add micro-copy"
+            go = st.button(label, key=f"{where}-mcbtn-{job_id}",
+                           help="Generates options that fit this draft. Your picks are checked before they're added.")
+        if go:
+            st.session_state[f"{open_key}-piece"] = piece
             with st.spinner("Generating micro-copy options for this draft…"):
                 try:
-                    run_job.build_microcopy_menu_after(job_id, CLIENTS_ROOT, OUTPUT_ROOT)
+                    run_job.build_microcopy_menu_after(job_id, CLIENTS_ROOT, OUTPUT_ROOT, piece=piece)
                 except run_job.JobBlocked as exc:
                     st.error(str(exc))
                     return
@@ -246,7 +260,8 @@ def _microcopy_after(job_id: str, where: str, has_copy: bool) -> None:
 
     session = run_job.load_session(OUTPUT_ROOT, job_id)
     with st.container(border=True):
-        st.markdown("**Pick the micro-copy** :gray[· options marked ⚠ would be rejected by the micro-copy gate]")
+        st.markdown(f"**Pick the micro-copy{f' for email {piece}' if piece else ''}** "
+                    ":gray[· options marked ⚠ would be rejected by the micro-copy gate]")
         selected = _microcopy_picker(session, f"{where}-{job_id}-{run_n}")
         empty = [field_label(f).lower() for f, text in selected.items() if not text.strip()]
         with st.container(horizontal=True, vertical_alignment="center"):
@@ -259,7 +274,7 @@ def _microcopy_after(job_id: str, where: str, has_copy: bool) -> None:
                 st.caption(f"To continue: write your {', '.join(empty)}.")
         if add:
             with st.spinner("Checking the copy against the gates…"):
-                results = run_job.attach_microcopy(job_id, selected, CLIENTS_ROOT, OUTPUT_ROOT)
+                results = run_job.attach_microcopy(job_id, selected, CLIENTS_ROOT, OUTPUT_ROOT, piece=piece)
             failed = [g for g in results if g.status.value == "failed"]
             if failed:
                 for g in failed:
@@ -342,9 +357,9 @@ def render_output(job_id: str, where: str) -> None:
             st.code(text, language=None, wrap_lines=True)
         st.markdown("**Body**")
         st.code(package["draft"]["body"], language=None, wrap_lines=True)
-        if (record.status in stats.COMPLETE_STATUSES and (output_dir / "session.json").exists()
-                and not package.get("sequence_length")):
-            _microcopy_after(job_id, where, has_copy=bool(package.get("microcopy_selected")))
+        if record.status in stats.COMPLETE_STATUSES and (output_dir / "session.json").exists():
+            _microcopy_after(job_id, where, has_copy=bool(package.get("microcopy_selected")),
+                             emails=len(package.get("sequence") or []))
         other = {f: c for f, c in (package.get("microcopy") or {}).items() if c}
         if other:
             with st.expander("Other micro-copy options"):
@@ -366,6 +381,11 @@ def render_output(job_id: str, where: str) -> None:
                 st.rerun()
             st.download_button("Download package.json", package_path.read_bytes(), file_name=f"{job_id}-package.json",
                                mime="application/json", key=f"{where}-json-{job_id}")
+            if (csv_path := output_dir / "sequence.csv").exists():
+                st.download_button("Download CSV", csv_path.read_bytes(), file_name=f"{record.client_id}-{job_id}.csv",
+                                   mime="text/csv", key=f"{where}-csv-{job_id}",
+                                   help="One row per email: subject line, preheader, body with sign-off. "
+                                        "Imports into most sending tools.")
         _gates(record)
         _rounds(record)
         if record.human_touchpoints:
@@ -466,11 +486,32 @@ with tab_generate:
             audience = c1.text_area("Audience", key=f"aud-{k}", height=100)
             notes = c2.text_area("Must follow", key=f"notes-{k}", height=100)
             default_n = None if custom_type else config.sequence_length(fmt)
+            plan_emails: list[str] = []
+            seq_notes, max_sentences = "", 0
             if default_n:
-                c0, c1, c2, c3 = st.columns([1, 1, 1, 3])
+                email_items = [i for i in plan_items if i.format in ("email", fmt)]
+                if email_items:
+                    known = {i.id for i in email_items}  # a restored pick may since have been rejected
+                    st.session_state[f"seqplan-{k}"] = [i for i in st.session_state.get(f"seqplan-{k}", []) if i in known]
+                    plan_emails = st.multiselect(
+                        "Emails from the content plan", [i.id for i in email_items], key=f"seqplan-{k}",
+                        format_func=lambda i: plan_labels[i],
+                        help="One plan item per email, in the order you pick them. Each fixes that email's topic "
+                             "and anchor word; the angles only differ in the thread through them.")
+                _seed(f"seqnotes-{k}", d["sequence_notes"])
+                seq_notes = st.text_area(
+                    "Across the sequence", key=f"seqnotes-{k}", height=80,
+                    help="Must-follow for the sequence as a whole (e.g. open the first email on the reader's turning "
+                         "point). \"Must follow\" above applies to every email.")
+                c0, c1, c2, c3, c4 = st.columns([1, 1, 1, 1, 2])
                 _seed(f"seq-{k}", default_n)
-                seq_n = c0.number_input("Emails", 2, 10, step=1, key=f"seq-{k}",
-                                        help="How many emails the sequence has. Each is written and checked on its own.")
+                seq_n = c0.number_input("Emails", 2, 10, step=1, key=f"seq-{k}", disabled=bool(plan_emails),
+                                        help="How many emails the sequence has. Each is written and checked on its own. "
+                                             "Set by the plan items when you pick them.")
+                _seed(f"sentmax-{k}", d["sentence_max"] or 0)
+                max_sentences = c3.number_input("Max sentences", 0, 30, step=1, key=f"sentmax-{k}",
+                                                help="Per email, not counting the greeting. 0 for no cap.")
+                c3 = c4
             else:
                 c1, c2, c3 = st.columns([1, 1, 3])
                 seq_n = None
@@ -539,9 +580,10 @@ with tab_generate:
                 brief = Brief(client_id=client_id, goal=goal.strip(), audience=audience.strip(), format=fmt,
                               format_description=fmt_desc, icp=picked_icp.name if picked_icp else None,
                               word_range=WordRange(min=int(min_words), max=int(max_words)),
-                              sequence_length=int(seq_n) if seq_n else None,
+                              sequence_length=len(plan_emails) or (int(seq_n) if seq_n else None),
                               angle_hint=angle_hint.strip() or None, notes=notes.strip() or None,
-                              plan_item_id=plan_pick)
+                              plan_item_id=None if plan_emails else plan_pick, plan_item_ids=plan_emails,
+                              sequence_notes=seq_notes.strip() or None, sentence_max=int(max_sentences) or None)
                 st.session_state.pop("preflight", None)
                 with st.spinner("Checking the brief, provenance and generating angles…"):
                     session = run_job.start(client_id, brief, CLIENTS_ROOT, OUTPUT_ROOT, tone=tone)
@@ -598,7 +640,8 @@ with tab_generate:
         angle_pick = st.session_state.get("angle_pick")
         if session.brief.sequence_length or not config.microcopy_fields(session.brief.format, {"x": 1}):
             mode = "skip"  # a sequence has no micro-copy menu
-            st.caption(f"A sequence of {session.brief.sequence_length} emails: each is written and checked on its own.")
+            st.caption(f"A sequence of {session.brief.sequence_length} emails: each is written with its own subject line "
+                       "and preheader and checked on its own and against the emails before it.")
         else:
             mode = st.segmented_control(
                 "Micro-copy", list(MICROCOPY_MODES), key=f"mcmode-{job_id}", default="pick",
