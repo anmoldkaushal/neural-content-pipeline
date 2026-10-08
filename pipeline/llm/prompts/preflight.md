@@ -5,7 +5,8 @@ produce a passing draft.
 
 List only real conflicts: places where doing what the brief says would break a rule, or where a
 rule requires something the brief tells the writer to leave out. Tension that a careful writer
-can satisfy both ways is not a conflict.
+can satisfy both ways is not a conflict, and is left out of the list entirely: never list an item
+only to say it isn't a conflict. Planned emails, when given, are brief asks too: check each one.
 
 For each conflict give the brief's words, the rule, and one sentence on how a writer would satisfy
 the rule while honouring as much of the brief as possible.
