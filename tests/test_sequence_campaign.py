@@ -129,6 +129,31 @@ def test_a_plan_item_that_is_not_approved_blocks_the_sequence(roots):
         _start(roots, ScriptedTransport(), plan_item_ids=ids)
 
 
+def test_an_anchor_word_is_a_theme_for_the_writer_and_the_fact_checker(roots):
+    clients, output = roots
+    item = PlanItem(id="p", title="You", format="email", notes="n", anchor="Reset", status="approved")
+    assert "Anchor word: reset (use it exactly once, as an ordinary word" in content_plan.brief_block(item)
+    assert "never a name for the event" in content_plan.brief_block(item)
+
+    class AnchoredBodies(ScriptedTransport):
+        def call(self, system_prompt, user_prompt):
+            result = super().call(system_prompt, user_prompt)
+            if user_prompt.startswith("Write the full draft") and "Write ONLY email" in user_prompt:
+                n = 1 if "Write ONLY email 1 of" in user_prompt else 2
+                reply = json.loads(result.text)
+                reply["body"] += f" A {('headroom', 'wavelength')[n - 1]} line{n} closes{n} it{n}."
+                return LLMResult(available=True, text=json.dumps(reply))
+            return result
+
+    ids = _plan(clients, anchors=("Headroom", "Wavelength", None))[:2]
+    transport = AnchoredBodies()
+    session = _start(roots, transport, plan_item_ids=ids)
+    run_job.execute(session.job_id, {}, clients, output, transport=transport)
+    checks = transport.saw("You are an independent fact checker")
+    assert "Theme words the client's plan asks the writer to use: Wavelength" in checks[1]
+    assert "the Reset" in checks[1] and "Theme words" in checks[0] and "Wavelength." not in checks[0]
+
+
 def test_synthesis_sizes_each_email_to_the_full_range(roots):
     from pipeline.schemas import WordRange
     clients, output = roots

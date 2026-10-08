@@ -51,7 +51,10 @@ The orchestrator runs in three phases (`start` -> `build_microcopy_menu` -> `exe
 - **`claims_critic`** -- the judged half of entailment: reads the prose cold against the verified
   facts and fails any statement about the client, and any specific figure or research claim, that
   no fact supports. Needed once the writer reads client context (strategy figures, competitor
-  numbers): a fact stated without an id is invisible to `entailment`. Replaces the old self-check
+  numbers): a fact stated without an id is invisible to `entailment`. Told a sequence email's anchor word
+  is a theme: as an ordinary word it isn't a claim, as a named feature ("the Reset") it is. A real
+  drip email escalated after the writer, told only to use "Reset" once, named it as part of the
+  event three rounds running. Replaces the old self-check
   stage, whose findings were computed and discarded. SKIPPED, never PASSED, if the transport is down.
 - **`voice_critic`** -- LLM judge, independent call, given the same style guide and full tone
   descriptions the writer got (it used to see preset names only). Reports SKIPPED (never PASSED)

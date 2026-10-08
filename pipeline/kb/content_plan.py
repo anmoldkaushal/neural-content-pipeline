@@ -138,7 +138,10 @@ def brief_block(item: Optional[PlanItem]) -> str:
     if item.notes:
         lines.append(f"Plan notes: {item.notes}")
     if item.anchor:
-        lines.append(f"Anchor word: {item.anchor} (use it exactly once)")
+        # A theme, not a feature: written as "That is the Reset", the fact checker failed it on
+        # every round, since no verified fact names a Reset.
+        lines.append(f"Anchor word: {item.anchor.lower()} (use it exactly once, as an ordinary word in a sentence about "
+                     "the reader; it is a theme, never a name for the event or any part of it)")
     return "\n".join(lines) + "\n"
 
 

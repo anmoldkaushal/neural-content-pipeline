@@ -51,7 +51,8 @@ def render(
                   f"- Don't open like an earlier email (no {knobs['opening_ngram']} words in a row from its opening).",
                   f"- Same link, different invitation: no {knobs['cta_ngram']} words in a row from an earlier call to action.",
                   f"- No run of {knobs['phrase_ngram']} words from an earlier email anywhere, and a subject line of its own.",
-                  "- A planned anchor word appears exactly once, and never another email's anchor word.",
+                  "- A planned anchor word appears exactly once, as an ordinary word (a theme, never a name for the "
+                  "event or part of it), and never another email's anchor word.",
                   "- Every email has a subject line and a preheader."]
     return "\n".join(lines) + "\n"
 

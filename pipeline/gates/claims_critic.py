@@ -24,8 +24,17 @@ def run(
     kb_entries: list[KBEntry],
     profile: ClientProfile,
     transport: Optional[ClaudeTransport] = None,
+    theme_words: Optional[list[str]] = None,
 ) -> GateResult:
+    """`theme_words`: words the client's plan has the writer use (a sequence email's anchor word).
+    Used as an ordinary word, one isn't a claim; presented as a named feature of the offering, it is."""
     transport = transport or ClaudeTransport()
+    themes = ""
+    if theme_words:
+        themes = ("Theme words the client's plan asks the writer to use: " + ", ".join(theme_words) + ". Used as an "
+                  "ordinary word, a theme word is not a statement about the client and needs no support. Presented "
+                  "as a named feature, programme or part of the offering (\"the Reset\", \"our Headroom sessions\"), "
+                  "it is a statement about the client like any other.\n\n")
     template = _PROMPT_PATH.read_text(encoding="utf-8")
     facts = "\n".join(f"- [{e.id}] {e.claim}" for e in kb_entries if e.status == "verified") or "(none)"
     user_prompt = (
@@ -33,6 +42,7 @@ def run(
         f"Client: {profile.company_name} ({profile.industry})\n\n"
         f"Verified facts:\n{facts}\n\n"
         f"{judged.shared_rules(profile)}\n"
+        f"{themes}"
         f"--- DRAFT ---\n{draft.body}\n--- END DRAFT ---"
     )
 
