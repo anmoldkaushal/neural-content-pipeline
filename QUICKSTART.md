@@ -136,6 +136,15 @@ them all under "EMAIL 1 OF 5" headings. From the CLI, set `format: email_sequenc
 `sequence_length: 3`) in the brief. Asking for several emails with the single Email type is caught
 before drafting.
 
+To write a sequence the client's plan already lays out, pick its items under **Emails from the
+content plan**, one per email in send order (CLI: `plan_item_ids: [plan-a, plan-b]`). Each item's
+`anchor` in `content_plan.yaml` must then appear exactly once in its email. **Must follow** applies
+to every email; **Across the sequence** (`sequence_notes`) to the sequence as a whole; **Max
+sentences** (`sentence_max`) caps each email. Every email gets a subject line and preheader;
+**More subject line options** offers alternatives for one email afterwards. The sign-off comes from
+`sender: {name, sign_off}` in `client.yaml` ({{merge_fields}} are fine) and **Download CSV** gives
+one row per email for a sending tool.
+
 ## Picking an angle, tone or ICP from the CLI
 
 `run` defaults to angle candidate 0, no ICP, the client's first tone preset (or the ICP's default
