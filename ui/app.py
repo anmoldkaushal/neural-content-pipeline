@@ -429,8 +429,11 @@ with tab_generate:
         brief_col, tone_col = st.columns([3, 2], gap="large")
         with brief_col:
             plan_items = content_plan.writable(client_dir)
+            # The source document in every label: two plans' items can share a number ("#5"), and a
+            # sequence was once written with another document's item 5.
             plan_labels = {i.id: f"{i.format.replace('_', ' ')} #{i.priority or '–'}: {i.title}"
-                           + (" (drafted)" if i.status == "drafted" else "") for i in plan_items}
+                           + (" (drafted)" if i.status == "drafted" else "")
+                           + (f" · from {i.source_doc.rsplit('.', 1)[0]}" if i.source_doc else "") for i in plan_items}
             if st.session_state.get(f"plan-{client_id}") not in plan_labels:
                 st.session_state[f"plan-{client_id}"] = None
             plan_pick = st.selectbox(
@@ -489,7 +492,7 @@ with tab_generate:
             plan_emails: list[str] = []
             seq_notes, max_sentences = "", 0
             if default_n:
-                email_items = [i for i in plan_items if i.format in ("email", fmt)]
+                email_items = content_plan.in_order([i for i in plan_items if i.format in ("email", fmt)])
                 if email_items:
                     known = {i.id for i in email_items}  # a restored pick may since have been rejected
                     st.session_state[f"seqplan-{k}"] = [i for i in st.session_state.get(f"seqplan-{k}", []) if i in known]
