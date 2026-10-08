@@ -23,6 +23,8 @@ _GATE_MEANING = {
     "entailment": "claim ids must be verified knowledge-base facts",
     "claims_critic": "every statement about the client must be backed by a verified fact",
     "voice_critic": "voice and tone fit, and not reading as generic AI copy",
+    "microcopy_lint": "the email's subject line and preheader: house and client terms, and present",
+    "sequence_lint": "not reusing an earlier email's opening, call to action, subject or phrasing; the anchor word once",
 }
 
 

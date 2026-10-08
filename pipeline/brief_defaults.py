@@ -52,6 +52,9 @@ def defaults_for(briefs_root: Path, client_id: str, format_: str, client_dir: Op
         "notes": per_type.get("must_follow") or profile.get("must_follow") or same_format.get("notes", ""),
         "word_range": _brief_range(per_type) or _brief_range(same_format) or config.default_word_range(format_),
         "description": per_type.get("description", ""),
+        # A sequence's whole-campaign must-follow, and a per-piece sentence cap, from the profile only.
+        "sequence_notes": per_type.get("sequence_notes", ""),
+        "sentence_max": int(per_type["sentence_max"]) if per_type.get("sentence_max") else None,
     }
 
 

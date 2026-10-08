@@ -62,6 +62,9 @@ def _draft_from(job_id: str, parsed: Any, working_spec: dict[str, Any], revision
         claims_used=[str(c) for c in parsed.get("claims_used", [])],
         revision=revision,
         change_notes=[str(n) for n in parsed.get("change_notes", []) or []],
+        # A revision that leaves the copy out keeps the previous email's copy.
+        subject_line=str(parsed.get("subject_line") or "").strip() or (fallback.subject_line if fallback else None),
+        preheader=str(parsed.get("preheader") or "").strip() or (fallback.preheader if fallback else None),
     )
 
 
@@ -108,7 +111,8 @@ def revise_draft(
         f"Working spec:\n{_spec_for_prompt(working_spec)}\n\n"
         f"WHAT TO FIX:\n{feedback}\n\n"
         f"Claims the previous draft cited: {previous.claims_used}\n"
-        f"--- PREVIOUS DRAFT ({previous.word_count} words) ---\n{previous.body}\n--- END PREVIOUS DRAFT ---"
+        + (f"Subject line: {previous.subject_line}\nPreheader: {previous.preheader}\n" if previous.subject_line else "")
+        + f"--- PREVIOUS DRAFT ({previous.word_count} words) ---\n{previous.body}\n--- END PREVIOUS DRAFT ---"
     )
     parsed, result = call_json(transport, system_prompt="", user_prompt=prompt)
     return _draft_from(job_id, parsed if result.ok else None, working_spec, revision, fallback=previous)

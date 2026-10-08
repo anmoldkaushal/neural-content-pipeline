@@ -137,4 +137,16 @@ def brief_block(item: Optional[PlanItem]) -> str:
         lines.append(f"Plan audience: {item.audience}")
     if item.notes:
         lines.append(f"Plan notes: {item.notes}")
+    if item.anchor:
+        lines.append(f"Anchor word: {item.anchor} (use it exactly once)")
     return "\n".join(lines) + "\n"
+
+
+def sequence_block(items: list[PlanItem]) -> str:
+    """A sequence's plan items as prompt lines: the emails the client's plan fixes, in send order."""
+    if not items:
+        return ""
+    out = "The client's content plan fixes the emails of this sequence, in this order:\n"
+    for n, item in enumerate(items, 1):
+        out += f"Email {n}:\n" + "".join(f"  {line}\n" for line in brief_block(item).splitlines())
+    return out

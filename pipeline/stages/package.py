@@ -2,11 +2,12 @@
 report. This bundle IS the deliverable, not just the draft text."""
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 from typing import Any, Optional
 
-from pipeline.schemas import Draft, GateResult, KBEntry, MicrocopyCandidate
+from pipeline.schemas import ClientProfile, Draft, GateResult, KBEntry, MicrocopyCandidate
 
 
 def build_package(
@@ -51,4 +52,44 @@ def write_package(output_dir: Path, package: dict[str, Any]) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / "package.json"
     path.write_text(json.dumps(package, indent=2), encoding="utf-8")
+    return path
+
+
+def sign_off(profile: ClientProfile) -> str:
+    """The client's sign-off and sender name, as appended under every email of a sequence."""
+    return "\n".join(x for x in (profile.sign_off, profile.sender_name) if x)
+
+
+def email_text(draft: Draft, n: int, signature: str = "") -> str:
+    """One email of a sequence as a reader gets it: subject, preheader, body, sign-off."""
+    parts = [f"EMAIL {draft.piece} OF {n}"]
+    if draft.subject_line:
+        parts.append(f"Subject: {draft.subject_line}")
+    if draft.preheader:
+        parts.append(f"Preheader: {draft.preheader}")
+    parts.append(draft.body.strip())
+    if signature:
+        parts.append(signature)
+    return "\n\n".join(parts)
+
+
+def _tagged(text: str, profile: ClientProfile, n: int) -> str:
+    """The website link with the client's UTM query for email n; unchanged without one."""
+    if not (profile.utm and profile.website):
+        return text
+    joiner = "&" if "?" in profile.website else "?"
+    return text.replace(profile.website, profile.website + joiner + profile.utm.replace("{n}", str(n)))
+
+
+def write_sequence_csv(output_dir: Path, emails: list[Draft], profile: ClientProfile) -> Path:
+    """sequence.csv: one row per email, ready to import into a sending tool. The UTM query goes on
+    the link here only, so the gated body keeps the single plain link the client's rules name."""
+    path = output_dir / "sequence.csv"
+    signature = sign_off(profile)
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["email", "subject_line", "preheader", "body"])
+        for d in emails:
+            body = d.body.strip() + (f"\n\n{signature}" if signature else "")
+            writer.writerow([d.piece, d.subject_line or "", d.preheader or "", _tagged(body, profile, d.piece or 0)])
     return path

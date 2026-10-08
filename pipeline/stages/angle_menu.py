@@ -27,6 +27,12 @@ def _steering(brief: Brief) -> str:
         lines.append(f"This is a sequence of {n} emails sent in order. Each angle is an arc across the whole "
                      f"sequence: give its structure as exactly {n} steps, one per email, each saying what that "
                      "email does and how it moves the reader toward the last one.")
+        if brief.plan_item_ids:
+            lines.append("The content plan below fixes each email's topic and order. Keep them exactly: step N is "
+                         "plan email N. The angles differ only in the thread that runs through the emails and in "
+                         "how each email approaches its planned topic.")
+        if brief.sequence_notes:
+            lines.append(f"Across the sequence: {brief.sequence_notes}")
     return "".join(line + "\n" for line in lines)
 
 

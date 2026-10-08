@@ -12,6 +12,9 @@ findings from every check that failed, and the client's rules. Edit the draft; d
 - State facts about the client only from VERIFIED FACTS; client context is direction, not fact.
 - Write the body only, with no template text or bracketed placeholders; a greeting that needs the
   recipient's name uses the merge field {{first_name}}.
+- For one email of a sequence (the working spec has "sequence"), also return its subject_line and
+  preheader, revised if a finding names them and otherwise as they were.
 
 Respond as a single JSON object:
 {"body": "the full revised draft", "claims_used": ["kb-id-1"], "change_notes": ["one line per fix: what you changed and which finding it answers"]}
+For one email of a sequence, add "subject_line" and "preheader" to that object.

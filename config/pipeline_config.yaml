@@ -17,6 +17,14 @@ transport:
 # draft in a 1,200-2,000 range from costing a whole revision round.
 word_range_tolerance: 0.1
 
+# sequence_lint: how many words in a row an email may share with an earlier one before it counts as
+# a repeat -- in the opening sentence, in the call to action (the link counts as one word), and
+# anywhere else. A run needs two words beyond the commonest ("you", "the", "is"...).
+sequence_lint:
+  opening_ngram: 4
+  cta_ngram: 5
+  phrase_ngram: 7
+
 # How much client context (strategy, past content, notes) a prompt may carry, in characters.
 context_budget_chars: 14000
 
@@ -29,11 +37,14 @@ formats:
     microcopy: {subject_line: 5, preheader: 3, cta: 3}
   # Several emails in one job: the angle is an arc with one step per email, each email is drafted
   # knowing the ones before it and gated on its own. word_range is per email; `sequence` is the
-  # default count (the brief can change it). No micro-copy menu: one menu can't serve five emails.
+  # default count (the brief can change it). No menu before drafting (one menu can't serve five
+  # emails): each email's subject line and preheader are written with its body, and
+  # `email_copy` sets how many alternatives a per-email menu offers on the finished job.
   email_sequence:
     word_range: [100, 200]
     sequence: 5
     microcopy: {}
+    email_copy: {subject_line: 5, preheader: 3}
   linkedin_message:
     word_range: [60, 120]
     microcopy: {opener: 3, cta: 3}

@@ -32,6 +32,7 @@ def run(
     reader_profile: Optional[str] = None,
     facts: str = "",
     earlier_notes: Optional[list[str]] = None,
+    sequence_context: str = "",
 ) -> GateResult:
     transport = transport or ClaudeTransport()
     template = _PROMPT_PATH.read_text(encoding="utf-8")
@@ -60,6 +61,7 @@ def run(
         # What this judge asked for in earlier rounds, so it can't ask for the opposite now.
         + ("\nYour notes on earlier drafts of this piece (the writer has acted on them; don't reverse "
            "them):\n" + "".join(f"- {n}\n" for n in earlier_notes) if earlier_notes else "")
+        + sequence_context
         + "\n"
         f"--- DRAFT ---\n{draft.body}\n--- END DRAFT ---"
     )

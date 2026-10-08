@@ -66,11 +66,16 @@ def format_issues(brief: Brief) -> list[str]:
 
 
 def rule_conflicts(
-    brief: Brief, profile: ClientProfile, transport: Optional[ClaudeTransport] = None
+    brief: Brief, profile: ClientProfile, transport: Optional[ClaudeTransport] = None,
+    steps: Optional[list[str]] = None,
 ) -> tuple[list[str], Optional[str]]:
     """(conflicts, skipped_reason). Nothing to compare when the brief has no notes or angle hint
-    and the client has no rules; an unavailable model is reported, never read as 'no conflicts'."""
-    asks = "\n".join(x for x in (brief.goal, brief.notes or "", brief.angle_hint or "") if x.strip())
+    and the client has no rules; an unavailable model is reported, never read as 'no conflicts'.
+    `steps` are a sequence's planned emails: each is an ask too. A drip's "health, peace and play"
+    email met a no-wellness-retreat rule only in review, and the email lost its topic in revision."""
+    planned = "".join(f"Email {n}: {s}\n" for n, s in enumerate(steps or [], 1))
+    asks = "\n".join(x for x in (brief.goal, brief.notes or "", brief.sequence_notes or "",
+                                 brief.angle_hint or "", planned) if x.strip())
     if not (profile.do_not_frame or profile.do_not_say) or not asks.strip():
         return [], None
 
@@ -84,7 +89,9 @@ def rule_conflicts(
         f"Do-not-say terms: {terms or '(none)'}\n\n"
         f"Brief goal: {brief.goal}\nAudience: {brief.audience}\n"
         f"Brief notes (must follow): {brief.notes or '(none)'}\n"
-        f"Angle hint: {brief.angle_hint or '(none)'}"
+        + (f"Sequence notes (must follow across the sequence): {brief.sequence_notes}\n" if brief.sequence_notes else "")
+        + f"Angle hint: {brief.angle_hint or '(none)'}"
+        + (f"\nPlanned emails (each is a brief ask; check each against the rules):\n{planned}" if planned else "")
     )
     parsed, result = call_json(transport, system_prompt="", user_prompt=prompt)
     if not result.ok or not isinstance(parsed, dict):
@@ -102,8 +109,9 @@ def rule_conflicts(
 
 
 def check(
-    brief: Brief, profile: ClientProfile, transport: Optional[ClaudeTransport] = None
+    brief: Brief, profile: ClientProfile, transport: Optional[ClaudeTransport] = None,
+    steps: Optional[list[str]] = None,
 ) -> tuple[list[str], list[str]]:
     """(issues for a human, notes). Notes say what couldn't be checked."""
-    conflicts, skipped = rule_conflicts(brief, profile, transport)
+    conflicts, skipped = rule_conflicts(brief, profile, transport, steps=steps)
     return format_issues(brief) + conflicts, [skipped] if skipped else []

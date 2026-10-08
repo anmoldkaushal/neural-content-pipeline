@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from pipeline import config
 from pipeline.gates.style_lint import banned_lists
 from pipeline.schemas import ClientProfile, ToneChoice, WordRange
 
@@ -14,6 +15,8 @@ def render(
     profile: ClientProfile,
     tone: Optional[ToneChoice] = None,
     word_range: Optional[WordRange] = None,
+    sentence_max: Optional[int] = None,
+    sequence: bool = False,
 ) -> str:
     banned_words, banned_phrases = banned_lists(profile)
     lines = [f"CLIENT RULES for {profile.company_name or profile.client_id} (every draft is checked against these)"]
@@ -40,6 +43,16 @@ def render(
         lines += [f"- {rule}" for rule in profile.do_not_frame]
     if word_range is not None:
         lines += ["", f"Length: {word_range.label()} for the body."]
+    if sentence_max:
+        lines.append(f"At most {sentence_max} sentences in the body, not counting the greeting (checked by count).")
+    if sequence:
+        knobs = config.sequence_lint()
+        lines += ["", "Across the sequence (checked against every earlier email):",
+                  f"- Don't open like an earlier email (no {knobs['opening_ngram']} words in a row from its opening).",
+                  f"- Same link, different invitation: no {knobs['cta_ngram']} words in a row from an earlier call to action.",
+                  f"- No run of {knobs['phrase_ngram']} words from an earlier email anywhere, and a subject line of its own.",
+                  "- A planned anchor word appears exactly once, and never another email's anchor word.",
+                  "- Every email has a subject line and a preheader."]
     return "\n".join(lines) + "\n"
 
 

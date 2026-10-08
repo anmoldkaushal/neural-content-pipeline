@@ -36,6 +36,7 @@ from pipeline.gates import (
     client_constraints_critic,
     entailment,
     microcopy_lint,
+    sequence_lint,
     style_lint,
     voice_critic,
 )
@@ -91,6 +92,7 @@ def _load_client_profile(client_dir: Path) -> ClientProfile:
 
     style_guide_path = client_dir / "style_guide.md"
     style_guide = style_guide_path.read_text(encoding="utf-8") if style_guide_path.exists() else ""
+    sender = data.get("sender") or {}
 
     # The folder name is the client id everywhere else (CLI --client, job records); YAML scalars
     # are coerced to text so an unquoted 001 or 2024 can't fail validation.
@@ -107,6 +109,9 @@ def _load_client_profile(client_dir: Path) -> ClientProfile:
         do_not_say=constraints_data.get("do_not_say") or [],
         do_not_frame=constraints_data.get("do_not_frame") or [],
         style_guide=style_guide,
+        sender_name=str(sender["name"]) if sender.get("name") else None,
+        sign_off=str(sender["sign_off"]) if sender.get("sign_off") else None,
+        utm=str(data["utm"]) if data.get("utm") else None,
     )
 
 
@@ -147,14 +152,42 @@ def _with_microcopy(draft: Draft, selected: dict[str, str]) -> Draft:
     return draft.model_copy(update={"body": f"{lines}\n\n{draft.body}"})
 
 
+def _approved_item(client_dir: Path, item_id: str) -> PlanItem:
+    item = content_plan.get(client_dir, item_id)
+    if item is None or item.status not in {"approved", "drafted"}:
+        state = "not in the content plan" if item is None else f"{item.status}, not approved"
+        raise JobBlocked(f"content plan item {item_id!r} is {state}")
+    return item
+
+
+def _sequence_items(client_dir: Path, brief: Brief, strict: bool = True) -> list[PlanItem]:
+    """The plan items a sequence is written from, one per email in order. Not strict: the ones that
+    still exist (later phases read them for prompts; start already checked them)."""
+    if strict:
+        return [_approved_item(client_dir, i) for i in brief.plan_item_ids]
+    return [x for x in (content_plan.get(client_dir, i) for i in brief.plan_item_ids) if x is not None]
+
+
+def _email_copy(draft: Draft) -> dict[str, str]:
+    return {f: v for f, v in (("subject_line", draft.subject_line), ("preheader", draft.preheader)) if v}
+
+
+def _email_copy_gate(draft: Draft, profile: ClientProfile) -> GateResult:
+    """A sequence email's own subject line and preheader: present, and clean of house and client
+    terms. Unlike picked copy this feeds the revise loop, since the writer wrote it with the body."""
+    result = microcopy_lint.run(_email_copy(draft), profile)
+    missing = [f"{f}: missing" for f in ("subject_line", "preheader") if not getattr(draft, f)]
+    if not missing:
+        return result
+    flagged = result.flagged_items + missing
+    return GateResult(gate_name="microcopy_lint", status=GateStatus.FAILED,
+                      detail=f"{len(flagged)} micro-copy issue(s)", flagged_items=flagged)
+
+
 def _plan_item(client_dir: Path, brief: Brief) -> Optional[PlanItem]:
     if not brief.plan_item_id:
         return None
-    item = content_plan.get(client_dir, brief.plan_item_id)
-    if item is None or item.status not in {"approved", "drafted"}:
-        state = "not in the content plan" if item is None else f"{item.status}, not approved"
-        raise JobBlocked(f"content plan item {brief.plan_item_id!r} is {state}")
-    return item
+    return _approved_item(client_dir, brief.plan_item_id)
 
 
 def _context_query(brief: Brief, item: Optional[PlanItem], *extra: str) -> str:
@@ -181,7 +214,9 @@ def start(
         raise FileNotFoundError(f"no such client: {client_id} (looked in {client_dir})")
     transport = transport or ClaudeTransport()
     profile = _load_client_profile(client_dir)
-    if brief.sequence_length is None and (n := config.sequence_length(brief.format)):
+    if brief.plan_item_ids:  # a sequence from the plan has one email per item
+        brief = brief.model_copy(update={"sequence_length": len(brief.plan_item_ids)})
+    elif brief.sequence_length is None and (n := config.sequence_length(brief.format)):
         brief = brief.model_copy(update={"sequence_length": n})
     # A picked ICP is rendered once here, so the session carries it even if the profile changes.
     if brief.icp and not brief.icp_profile:
@@ -191,7 +226,9 @@ def start(
     # leaves no half-started job behind.
     preflight_notes: list[str] = []
     if preflight_ack is None:
-        issues, preflight_notes = preflight.check(brief, profile, transport=transport)
+        # A plan-driven sequence's emails are known now, so each is checked against the rules too.
+        steps = [content_plan.brief_block(i).strip() for i in _sequence_items(client_dir, brief, strict=False)]
+        issues, preflight_notes = preflight.check(brief, profile, transport=transport, steps=steps)
         if issues:
             raise PreflightIssues(issues)
 
@@ -218,10 +255,14 @@ def start(
     gaps = intake.missing_info(brief, client_dir)
     record.stages_run.append("intake")
     item: Optional[PlanItem] = None
+    items: list[PlanItem] = []
     try:
         item = _plan_item(client_dir, brief)
+        items = _sequence_items(client_dir, brief)
     except JobBlocked as exc:
         gaps.append(str(exc))
+    if brief.plan_item_ids and not config.sequence_length(brief.format):
+        gaps.append(f"several plan items were picked, but {brief.format} writes one piece; use email_sequence")
     if gaps:
         _block(output_dir, record, "awaiting_human", gaps)
         raise JobBlocked("brief/knowledge-base incomplete: " + "; ".join(gaps))
@@ -230,10 +271,13 @@ def start(
     examples = load_examples(client_dir, brief.format)
     angles = angle_menu.generate_angles(
         brief, _load_kb_entries(client_dir), transport=transport, examples=examples,
-        plan_block=content_plan.brief_block(item),
-        context_block=context.select(client_dir, _context_query(brief, item)),
+        plan_block=content_plan.sequence_block(items) or content_plan.brief_block(item),
+        context_block=context.select(client_dir, _context_query(brief, item, *(i.title for i in items))),
     )
     record.stages_run.append("angle_menu")
+    for a in angles:  # the plan fixes one step per email; an angle that lost count gets the plan's
+        if items and len(a.structure) != len(items):
+            a.structure = [f"{i.title}: {i.notes or ''}".strip() for i in items]
     if not angles:
         _block(output_dir, record, "awaiting_human", ["angle generation unavailable or returned no candidates"])
         raise JobBlocked("no angle candidates available")
@@ -311,18 +355,28 @@ def _run_gates(
     transport: ClaudeTransport,
     facts: str = "",
     earlier_voice_notes: Optional[list[str]] = None,
+    seq: Optional[dict] = None,
 ) -> list[GateResult]:
+    """`seq`, for one email of a sequence: its earlier emails, anchor words and the judges' sequence
+    context. The email's own subject line and preheader then stand in for picked micro-copy."""
+    if seq is not None:
+        microcopy_result, selected = _email_copy_gate(draft, profile), _email_copy(draft)
     as_read = _with_microcopy(draft, selected)
-    return [
+    results = [
         microcopy_result,
-        style_lint.run(draft, profile, word_range=brief.word_range),
+        style_lint.run(draft, profile, word_range=brief.word_range, sentence_max=brief.sentence_max),
         client_constraints.run(draft, profile),
-        client_constraints_critic.run(as_read, profile, transport=transport, facts=facts),
+        client_constraints_critic.run(as_read, profile, transport=transport, facts=facts,
+                                      sequence_context=seq["framing_context"] if seq else ""),
         entailment.run(draft, kb_entries),
         claims_critic.run(as_read, kb_entries, profile, transport=transport),
         voice_critic.run(as_read, profile, transport=transport, tone=tone, must_follow=brief.notes,
-                         reader_profile=brief.icp_profile, facts=facts, earlier_notes=earlier_voice_notes),
+                         reader_profile=brief.icp_profile, facts=facts, earlier_notes=earlier_voice_notes,
+                         sequence_context=seq["voice_context"] if seq else ""),
     ]
+    if seq is not None:
+        results.append(sequence_lint.run(draft, seq["earlier"], seq["anchor"], seq["other_anchors"]))
+    return results
 
 
 class _PieceFailed(Exception):
@@ -343,6 +397,7 @@ def _draft_piece(
     draft_args: dict,
     retry_budget: int,
     transport: ClaudeTransport,
+    seq: Optional[dict] = None,
 ) -> tuple[Draft, list[GateResult], dict[str, int]]:
     """One piece through draft -> gates -> bounded revise rounds; a revision edits the previous
     draft. Returns (draft, final gate results, attempts per gate); raises _PieceFailed when a gate
@@ -358,7 +413,7 @@ def _draft_piece(
         # The voice judge sees what it said in earlier rounds, so it can't ask for the opposite.
         earlier_voice = [i for round_ in history for g in round_ if g.gate_name == "voice_critic"
                          for i in (g.flagged_items or [g.detail])]
-        gate_results = _run_gates(current, transport=transport, earlier_voice_notes=earlier_voice, **gate_args)
+        gate_results = _run_gates(current, transport=transport, earlier_voice_notes=earlier_voice, seq=seq, **gate_args)
         record.rounds.append(RevisionRound(
             revision=current.revision, word_count=current.word_count,
             gate_results=gate_results, change_notes=current.change_notes, piece=piece,
@@ -383,9 +438,10 @@ def _draft_piece(
         current = revised.model_copy(update={"piece": piece})
 
 
-def _combined(job_id: str, drafts: list[Draft], n: int) -> Draft:
-    """A sequence as one deliverable: each email under its own heading."""
-    body = "\n\n".join(f"EMAIL {d.piece} OF {n}\n\n{d.body}" for d in drafts)
+def _combined(job_id: str, drafts: list[Draft], n: int, signature: str = "") -> Draft:
+    """A sequence as one deliverable: each email under its own heading, with its subject line,
+    preheader and the client's sign-off."""
+    body = "\n\n".join(package.email_text(d, n, signature) for d in drafts)
     claims = list(dict.fromkeys(c for d in drafts for c in d.claims_used))
     return Draft(job_id=job_id, body=body, word_count=sum(d.word_count for d in drafts),
                  outline=[o for d in drafts for o in d.outline], claims_used=claims,
@@ -426,20 +482,30 @@ def execute(
             f"errors: {session.microcopy_errors})"
         )
 
-    # 5. micro-copy gate -- a body redraft can't fix a picked subject line, so block, don't retry
+    # 5. micro-copy gate -- a body redraft can't fix a picked subject line, so block, don't retry.
+    # A sequence's sign-off is fixed client copy, so it is held to the same rules once, here.
+    n = brief.sequence_length or 0
+    signature = package.sign_off(profile) if n else ""
     microcopy_result = microcopy_lint.run(selected, profile)
-    if microcopy_result.status == GateStatus.FAILED:
-        record.gate_results = [microcopy_result]
-        _block(output_dir, record, "awaiting_human", [f"selected micro-copy failed the gate: {microcopy_result.flagged_items}"])
-        raise JobBlocked("selected micro-copy violates house or client rules: " + "; ".join(microcopy_result.flagged_items))
+    fixed = microcopy_lint.run({"sign_off": signature}, profile) if signature else microcopy_result
+    for result in (microcopy_result, fixed):
+        if result.status == GateStatus.FAILED:
+            record.gate_results = [result]
+            _block(output_dir, record, "awaiting_human", [f"micro-copy failed the gate: {result.flagged_items}"])
+            raise JobBlocked("micro-copy violates house or client rules: " + "; ".join(result.flagged_items))
+    if "{{" in signature:
+        record.human_touchpoints.append(
+            f"the sign-off has placeholders ({signature!r}): fill in `sender` in client.yaml, or map the merge "
+            "fields in your sending tool")
 
-    # 6. what the writer reads: rules, verified facts, plan item, relevant context
-    plan_block = content_plan.brief_block(item)
+    # 6. what the writer reads: rules, verified facts, plan item(s), relevant context
+    items = _sequence_items(client_dir, brief, strict=False)
+    plan_block = content_plan.sequence_block(items) or content_plan.brief_block(item)
     context_block = context.select(
         client_dir,
         _context_query(brief, item, chosen_angle.headline, chosen_angle.pitch, " ".join(chosen_angle.structure)),
     )
-    rules = rulebook.render(profile, chosen_tone, brief.word_range)
+    rules = rulebook.render(profile, chosen_tone, brief.word_range, sentence_max=brief.sentence_max, sequence=bool(n))
     facts = draft_stage.facts_block(kb_entries, chosen_angle.claims_used)
 
     # 7. brief synthesis
@@ -449,15 +515,28 @@ def execute(
     )
     working_spec["approved_examples"] = load_examples(client_dir, brief.format)
     if brief.notes:
-        working_spec["must_follow"] = brief.notes
+        working_spec["must_follow"] = brief.notes + (" (every email)" if n else "")
+    if brief.sequence_notes:
+        working_spec["sequence_notes"] = brief.sequence_notes + " (the sequence as a whole, not every email)"
+    if brief.sentence_max:
+        working_spec["sentence_max"] = brief.sentence_max
     if brief.word_range:
         working_spec["word_range"] = brief.word_range.label()
     if brief.format_description:
         working_spec["content_type"] = f"{brief.format}: {brief.format_description}"
     if item is not None:
         working_spec["content_plan_item"] = plan_block.strip()
-    if session.preflight_overridden:
-        working_spec["known_conflicts"] = session.preflight_overridden
+    known_conflicts = list(session.preflight_overridden)
+    if n and not items:
+        # Steps the angle menu invented weren't there for preflight: check them now. A conflict is
+        # recorded and the writer told the client's rules win (the angle was already chosen).
+        bare = brief.model_copy(update={"notes": None, "sequence_notes": None, "angle_hint": None})
+        conflicts, skipped = preflight.rule_conflicts(bare, profile, transport, steps=chosen_angle.structure)
+        known_conflicts += conflicts
+        record.human_touchpoints += [f"a planned email conflicts with a client rule (client rules applied): {c}"
+                                     for c in conflicts] + ([skipped] if skipped else [])
+    if known_conflicts:
+        working_spec["known_conflicts"] = known_conflicts
     if brief.icp_profile:
         working_spec["reader_profile"] = brief.icp_profile
     if selected:
@@ -467,7 +546,6 @@ def execute(
 
     # 8. draft, then gates and bounded revise rounds -- once, or once per email of a sequence,
     # each email knowing the ones before it and gated on its own
-    n = brief.sequence_length or 0
     steps = chosen_angle.structure
     gate_args = dict(selected=selected, microcopy_result=microcopy_result, profile=profile, kb_entries=kb_entries,
                      brief=brief, tone=chosen_tone, facts=facts)
@@ -479,15 +557,31 @@ def execute(
         spec = working_spec
         if piece:
             spec = dict(working_spec)
+            step = steps[piece - 1] if len(steps) >= piece else f"step {piece} of the arc"
+            this_item = items[piece - 1] if len(items) >= piece else None
             spec["sequence"] = (
-                f"Write ONLY email {piece} of {n} in the sequence. This email's job: "
-                f"{steps[piece - 1] if len(steps) >= piece else f'step {piece} of the arc'}. Don't repeat "
-                "what the earlier emails already said; move the reader one step on."
+                f"Write ONLY email {piece} of {n} in the sequence. This email's job: {step}. Don't repeat "
+                "what the earlier emails already said; move the reader one step on. Open and close it in "
+                "a way none of the earlier emails did."
             )
-            spec["emails_already_written"] = [f"Email {d.piece}: {d.body}" for d in done]
+            if this_item is not None:
+                spec["content_plan_item"] = content_plan.brief_block(this_item).strip()
+            spec["emails_already_written"] = [
+                f"Email {d.piece} (subject: {d.subject_line or '-'}): {d.body}" for d in done]
+            earlier = [f"Email {d.piece}: {d.body}" for d in done]
+            plan_text = content_plan.brief_block(this_item)
+            seq = dict(
+                earlier=list(done),
+                anchor=this_item.anchor if this_item else None,
+                other_anchors=[i.anchor for i in items if i.anchor and i is not this_item],
+                voice_context=judged.sequence_block(piece, n, step, plan_text, brief.sequence_notes or "", earlier),
+                framing_context=judged.sequence_block(piece, n, step, plan_text, "", earlier, judge_repeats=False),
+            )
+        else:
+            seq = None
         try:
             draft, gates, attempts = _draft_piece(job_id, spec, piece, record, output_dir, gate_args, draft_args,
-                                                  effective_retry_budget, transport)
+                                                  effective_retry_budget, transport, seq=seq)
         except _PieceFailed as f:
             where = f"email {piece} of {n}: " if piece else ""
             for g, k in f.attempts.items():
@@ -500,7 +594,7 @@ def execute(
             # Persist the failing draft so a human has something to actually review -- a gate
             # failure without the text that failed it is an escalation nobody can act on. For a
             # sequence, that's every email so far, so finishing by hand covers them all.
-            failing = _combined(job_id, done + [f.draft], n) if piece else f.draft
+            failing = _combined(job_id, done + [f.draft], n, signature) if piece else f.draft
             (output_dir / "last_failed_draft.json").write_text(failing.model_dump_json(indent=2), encoding="utf-8")
             lessons.record(output_root, session.client_id, job_id, record.rounds)
             _block(output_dir, record, "awaiting_human", notes)
@@ -512,7 +606,7 @@ def execute(
             retries[f"{g} (email {piece})" if piece else g] = k
         record.retry_count = retries
         final_gates += [g.model_copy(update={"gate_name": f"{g.gate_name} (email {piece})"}) for g in gates] if piece else gates
-    current_draft = _combined(job_id, done, n) if n else done[0]
+    current_draft = _combined(job_id, done, n, signature) if n else done[0]
     gate_results = final_gates
     record.gate_results = gate_results
 
@@ -523,6 +617,8 @@ def execute(
     if n:
         final_package["sequence_length"] = n
         final_package["sequence"] = [d.model_dump(mode="json") for d in done]
+        final_package["sign_off"] = signature
+        package.write_sequence_csv(output_dir, done, profile)
     package.write_package(output_dir, final_package)
     record.stages_run.append("package")
     record.status = "complete"
@@ -533,8 +629,8 @@ def execute(
     record.human_touchpoints.append("final approval pending (v1: always required, see PIPELINE_STATUS.md)")
     job_record.save(output_dir, record)
     lessons.record(output_root, session.client_id, job_id, record.rounds)
-    if item is not None:
-        content_plan.mark_drafted(client_dir, item.id, job_id)
+    for planned in ([item] if item is not None else []) + items:
+        content_plan.mark_drafted(client_dir, planned.id, job_id)
 
     # 10. render -- the PDF is the deliverable a human actually reads; package.json stays the
     # machine-readable source of truth it's rendered from.
@@ -572,7 +668,8 @@ def finish_by_hand(
     )
     results = [
         microcopy_lint.run(record.microcopy_selected, profile),
-        style_lint.run(draft, profile, word_range=None if session.brief.sequence_length else session.brief.word_range),
+        style_lint.run(draft, profile, word_range=None if session.brief.sequence_length else session.brief.word_range,
+                       sentence_max=None if session.brief.sequence_length else session.brief.sentence_max),
         client_constraints.run(draft, profile),
     ] + [
         GateResult(gate_name=name, status=GateStatus.SKIPPED, detail=f"not re-run: finished by hand by {edited_by}")
@@ -610,20 +707,38 @@ def _finished(output_root: Path, job_id: str) -> tuple[JobSession, dict, Path]:
     return session, json.loads(package_path.read_text(encoding="utf-8")), output_dir
 
 
+def _sequence_email(package_data: dict, piece: int) -> Draft:
+    emails = package_data.get("sequence") or []
+    if not 1 <= piece <= len(emails):
+        raise JobBlocked(f"this job has no email {piece}")
+    return Draft(**emails[piece - 1])
+
+
 def build_microcopy_menu_after(
     job_id: str,
     clients_root: Path,
     output_root: Path,
     transport: Optional[ClaudeTransport] = None,
+    piece: Optional[int] = None,
 ) -> JobSession:
     """A micro-copy menu for a finished job, written to fit the packaged draft (which may have been
-    hand-edited) rather than only the angle. Leaves the package alone until `attach_microcopy`."""
+    hand-edited) rather than only the angle. Leaves the package alone until `attach_microcopy`.
+    With `piece`, alternatives for one sequence email's subject line and preheader, fitted to that
+    email and kept apart from the other emails' subject lines."""
     session, package_data, _ = _finished(output_root, job_id)
     client_dir = clients_root / session.client_id
     profile = _load_client_profile(client_dir)
     body = package_data["draft"]["body"]
+    fields = None
     item = content_plan.get(client_dir, session.brief.plan_item_id) if session.brief.plan_item_id else None
     context_lines = microcopy.menu_context(session.brief, session.tone, content_plan.brief_block(item), profile)
+    if piece:
+        email = _sequence_email(package_data, piece)
+        body, fields = email.body, config.email_copy_fields(session.brief.format)
+        others = [e.get("subject_line") for e in package_data["sequence"] if e.get("piece") != piece and e.get("subject_line")]
+        context_lines += (f"This is email {piece} of {package_data.get('sequence_length')} in a sequence. Its current subject "
+                          f"line: {email.subject_line or '(none)'}. The other emails' subject lines (yours must differ): "
+                          f"{'; '.join(others) or '(none)'}\n")
     session.microcopy_menu, session.microcopy_errors = microcopy.generate_all(
         session.angles[session.angle_index],
         transport=transport or ClaudeTransport(),
@@ -631,6 +746,7 @@ def build_microcopy_menu_after(
         format_=session.brief.format,
         context=context_lines + f"Finished draft (fit the copy to it):\n{body}\n",
         profile=profile,
+        fields=fields,
     )
     _save_session(output_root, session)
     return session
@@ -642,16 +758,20 @@ def attach_microcopy(
     clients_root: Path,
     output_root: Path,
     transport: Optional[ClaudeTransport] = None,
+    piece: Optional[int] = None,
 ) -> list[GateResult]:
     """Gates copy picked after drafting, then adds it to the package. The body is unchanged, so only
     the gates that read copy run: the micro-copy lint, then the three judged gates on the draft with
     the copy on top. Any failure leaves the package as it was (nothing to retry: the copy is the
-    human's pick) and the results come back for the caller to show."""
+    human's pick) and the results come back for the caller to show. With `piece`, the copy replaces
+    that sequence email's subject line and/or preheader."""
     session, package_data, output_dir = _finished(output_root, job_id)
-    record = job_record.load(output_dir)
     client_dir = clients_root / session.client_id
-    profile = _load_client_profile(client_dir)
     selected = {k: v.strip() for k, v in microcopy_selected.items() if v and v.strip()}
+    if piece:
+        return _attach_email_copy(session, package_data, output_dir, client_dir, piece, selected, transport)
+    record = job_record.load(output_dir)
+    profile = _load_client_profile(client_dir)
 
     results = [microcopy_lint.run(selected, profile)]
     if results[0].status != GateStatus.FAILED:
@@ -680,6 +800,56 @@ def attach_microcopy(
         "any_skipped": any(g.status == GateStatus.SKIPPED for g in gate_results),
     }
     package.write_package(output_dir, package_data)
+    job_record.save(output_dir, record)
+    pdf_export.render_package_pdf(package_data, record, profile.company_name, output_dir / "package.pdf")
+    return results
+
+
+def _attach_email_copy(session: JobSession, package_data: dict, output_dir: Path, client_dir: Path, piece: int,
+                       selected: dict[str, str], transport: Optional[ClaudeTransport]) -> list[GateResult]:
+    """attach_microcopy for one email of a sequence: lint, a subject line of its own, then the judged
+    gates on the email with its new copy on top. Nothing changes unless every one passes."""
+    record = job_record.load(output_dir)
+    profile = _load_client_profile(client_dir)
+    emails = [Draft(**e) for e in package_data["sequence"]]
+    email = _sequence_email(package_data, piece)
+    updated = email.model_copy(update={f: v for f, v in selected.items() if f in ("subject_line", "preheader")})
+    others = [e for e in emails if e.piece != piece]
+    clash = [f"the subject line is the same as email {e.piece}'s ({e.subject_line!r})" for e in others
+             if updated.subject_line and e.subject_line and sequence_lint.same_copy(updated.subject_line, e.subject_line)]
+    results = [_email_copy_gate(updated, profile),
+               GateResult(gate_name="sequence_lint", status=GateStatus.FAILED if clash else GateStatus.PASSED,
+                          detail="subject line repeats another email's" if clash else "subject line is its own",
+                          flagged_items=clash)]
+    if not any(g.status == GateStatus.FAILED for g in results):
+        transport = transport or ClaudeTransport()
+        as_read = _with_microcopy(updated, _email_copy(updated))
+        results += [
+            client_constraints_critic.run(as_read, profile, transport=transport),
+            claims_critic.run(as_read, _load_kb_entries(client_dir), profile, transport=transport),
+            voice_critic.run(as_read, profile, transport=transport, tone=session.tone, must_follow=session.brief.notes,
+                             reader_profile=session.brief.icp_profile),
+        ]
+    results = [g.model_copy(update={"gate_name": f"{g.gate_name} (email {piece})"}) for g in results]
+    if any(g.status == GateStatus.FAILED for g in results):
+        return results
+
+    emails[piece - 1] = updated
+    n = int(package_data.get("sequence_length") or len(emails))
+    signature = package_data.get("sign_off") or ""
+    rerun = {g.gate_name: g for g in results}
+    gate_results = [rerun.pop(g.gate_name, g) for g in record.gate_results] + list(rerun.values())
+    record.gate_results = gate_results
+    record.stages_run.append(f"email {piece} copy (after draft)")
+    package_data["sequence"] = [e.model_dump(mode="json") for e in emails]
+    package_data["draft"] = _combined(session.job_id, emails, n, signature).model_dump(mode="json")
+    package_data["compliance_report"] = {
+        "gates": [g.model_dump(mode="json") for g in gate_results],
+        "all_passed": all(g.status != GateStatus.FAILED for g in gate_results),
+        "any_skipped": any(g.status == GateStatus.SKIPPED for g in gate_results),
+    }
+    package.write_package(output_dir, package_data)
+    package.write_sequence_csv(output_dir, emails, profile)
     job_record.save(output_dir, record)
     pdf_export.render_package_pdf(package_data, record, profile.company_name, output_dir / "package.pdf")
     return results

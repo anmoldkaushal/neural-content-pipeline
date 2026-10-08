@@ -62,6 +62,18 @@ def default_word_range(format_: str) -> tuple[int, int] | None:
     return int(value[0]), int(value[1])
 
 
+def email_copy_fields(format_: str | None) -> dict[str, int]:
+    """Field -> alternatives for a sequence email's own copy (subject line, preheader)."""
+    return {str(k): int(v) for k, v in (formats().get(format_ or "", {}).get("email_copy") or {}).items()}
+
+
+def sequence_lint() -> dict[str, int]:
+    """Shared-run lengths (in words) at which sequence_lint calls an email a repeat of an earlier one."""
+    knobs = {"opening_ngram": 4, "cta_ngram": 5, "phrase_ngram": 7}
+    knobs.update({k: int(v) for k, v in (load().get("sequence_lint") or {}).items()})
+    return knobs
+
+
 def word_range_tolerance(fallback: float = 0.1) -> float:
     return float(load().get("word_range_tolerance", fallback))
 

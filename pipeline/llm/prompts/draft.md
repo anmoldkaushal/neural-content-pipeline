@@ -13,9 +13,14 @@ Write the full draft described by the working spec below, for the client whose r
   keyword naturally.
 - If "known_conflicts" is present, a human chose to proceed past a clash between the brief and
   the client's rules: the client's rules win.
-- Write the body only: no subject line, preheader or title (those are picked separately as
-  micro-copy). Leave no template text or bracketed placeholders. If the greeting needs the
+- Write the body only: no subject line, preheader, title or sign-off (the sign-off is added
+  afterwards). Leave no template text or bracketed placeholders. If the greeting needs the
   recipient's name, use the merge field {{first_name}}.
+- If the working spec has "sequence", you are writing one email of a sequence. Also write its
+  subject_line (a few plain words a person would open) and preheader (one short line that extends
+  the subject, never repeats it), held to the same client rules as the body. Open, close and phrase
+  it differently from every email in "emails_already_written": same link, a different invitation.
 
 Respond as a single JSON object: {"body": "the full draft text", "claims_used": ["kb-id-1"]}
-(claims_used is every verified fact id the body actually relies on).
+(claims_used is every verified fact id the body actually relies on). For one email of a sequence,
+add "subject_line" and "preheader" to that object.

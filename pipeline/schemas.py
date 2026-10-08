@@ -51,9 +51,16 @@ class Brief(BaseModel):
     icp_profile: Optional[str] = None
     angle_hint: Optional[str] = None
     deadline: Optional[dt.date] = None
-    notes: Optional[str] = None
+    notes: Optional[str] = None  # must-follow; for a sequence, applies to every email
     # A content-plan item (clients/<id>/content_plan.yaml) this piece is written from, if any.
     plan_item_id: Optional[str] = None
+    # A sequence written from the plan: one item per email, in send order. Fixes each email's
+    # topic and order, so the angle menu proposes only the thread through them.
+    plan_item_ids: list[str] = Field(default_factory=list)
+    # Must-follow for the sequence as a whole ("open the first email on the reader's turning
+    # point"), kept apart from `notes` so no judge holds every email to all of them.
+    sequence_notes: Optional[str] = None
+    sentence_max: Optional[int] = None  # per piece (per email, for a sequence); None = no cap
 
     @model_validator(mode="before")
     @classmethod
@@ -165,6 +172,13 @@ class ClientProfile(BaseModel):
     do_not_say: list[str] = Field(default_factory=list)  # literal terms, substring-checked
     do_not_frame: list[str] = Field(default_factory=list)  # framing/positioning rules, judged
     style_guide: str = ""  # style_guide.md as written; the drafter and the voice judge both read it
+    # Appended to every email of a sequence at package time, never written by the model.
+    # A {{merge_field}} here is a placeholder for the sending tool to fill.
+    sender_name: Optional[str] = None
+    sign_off: Optional[str] = None
+    # Query string added to the website link in the sequence export only, e.g.
+    # "utm_source=email&utm_campaign=drip&utm_content=email-{n}" ({n} = the email's number).
+    utm: Optional[str] = None
 
 
 class Angle(BaseModel):
@@ -208,6 +222,10 @@ class Draft(BaseModel):
     # What the writer says it changed on a revision pass; empty on a first draft.
     change_notes: list[str] = Field(default_factory=list)
     piece: Optional[int] = None  # 1-based position in a sequence; None for a single piece
+    # A sequence email's own copy, written with its body (a single piece's copy is picked from
+    # the micro-copy menu instead and lives on the job).
+    subject_line: Optional[str] = None
+    preheader: Optional[str] = None
 
 
 class GateStatus(str, Enum):
@@ -290,6 +308,7 @@ class PlanItem(BaseModel):
     notes: Optional[str] = None
     source_doc: Optional[str] = None
     location: Optional[str] = None
+    anchor: Optional[str] = None  # a word the piece uses exactly once (a sequence's per-email theme)
     status: str = "proposed"  # "proposed" | "approved" | "drafted" | "rejected"
     job_ids: list[str] = Field(default_factory=list)
 

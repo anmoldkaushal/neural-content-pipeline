@@ -43,7 +43,7 @@ def test_a_sequence_writes_and_gates_each_email(roots):
     drafts = transport.saw("Write the full draft")
     assert len(drafts) == 3
     assert "Write ONLY email 1 of 3" in drafts[0] and "Write ONLY email 3 of 3" in drafts[2]
-    assert "Email 1: The TI-4200" in drafts[1]  # email 2 is written knowing email 1
+    assert "Email 1 (subject: Bench note probe): Email1 probe1" in drafts[1]  # email 2 knows email 1
     package = json.loads((output_dir / "package.json").read_text())
     assert package["sequence_length"] == 3 and len(package["sequence"]) == 3
     assert package["draft"]["body"].startswith("EMAIL 1 OF 3")

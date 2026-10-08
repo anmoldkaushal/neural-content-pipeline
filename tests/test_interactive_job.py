@@ -5,6 +5,7 @@ notes and an ad-hoc tone actually reach the prompts, and the chosen angle/tone/c
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -17,6 +18,13 @@ from pipeline.stages import tone_select
 
 REPO_CLIENTS = Path(__file__).resolve().parent.parent / "clients"
 BODY = " ".join(["The TI-4200 probe repeats to spec on every shift."] * 8)
+_SEQ_WORDS = ["probe", "shift", "bench", "gauge", "fixture", "tolerance", "sample", "drift", "audit", "batch"]
+
+
+def sequence_body(n: int) -> str:
+    """A distinct email n for a sequence: no run of words shared with another email's body."""
+    w = _SEQ_WORDS[(n - 1) % len(_SEQ_WORDS)]
+    return " ".join(f"Email{n} {w}{n} line{i} holds{n} steady{n}." for i in range(12))
 
 
 class ScriptedTransport:
@@ -36,6 +44,10 @@ class ScriptedTransport:
                      {"text": "Probe data you can repeat", "strategy": "curiosity-led"}]
         elif p.startswith("You are compiling a working spec"):
             reply = {"outline": ["spec"], "claims_to_use": ["kb-demo0001"]}
+        elif p.startswith("Write the full draft") and (m := re.search(r"Write ONLY email (\d+) of", p)):
+            n = int(m.group(1))
+            reply = {"body": sequence_body(n), "claims_used": ["kb-demo0001"],
+                     "subject_line": f"Bench note {_SEQ_WORDS[n - 1]}", "preheader": f"What the {_SEQ_WORDS[n - 1]} shows"}
         elif p.startswith("Write the full draft"):
             reply = {"body": BODY, "claims_used": ["kb-demo0001"]}
         elif p.startswith("You are an independent editorial critic"):

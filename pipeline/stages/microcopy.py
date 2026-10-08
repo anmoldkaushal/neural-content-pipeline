@@ -92,14 +92,16 @@ def generate_all(
     format_: Optional[str] = None,
     context: str = "",
     profile: Optional[ClientProfile] = None,
+    fields: Optional[dict[str, int]] = None,
 ) -> tuple[dict[str, list[MicrocopyCandidate]], dict[str, str]]:
-    """One call per field for the format's field set. With a profile, each candidate is tagged
-    with its deterministic lint hits so the menu can mark options the gates would reject."""
+    """One call per field for the format's field set (or `fields`, e.g. one sequence email's copy).
+    With a profile, each candidate is tagged with its deterministic lint hits so the menu can mark
+    options the gates would reject."""
     transport = transport or ClaudeTransport()
     fallback = {f.value: n for f, n in _FALLBACK_CAPS.items()}
     candidates_by_field: dict[str, list[MicrocopyCandidate]] = {}
     errors_by_field: dict[str, str] = {}
-    for field_name, count in config.microcopy_fields(format_, fallback).items():
+    for field_name, count in (fields or config.microcopy_fields(format_, fallback)).items():
         candidates, error = generate_field(
             field_name, angle, count=count, transport=transport, examples=examples, context=context
         )

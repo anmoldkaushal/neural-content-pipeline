@@ -63,6 +63,22 @@ def count_words(text: str) -> int:
     return len(re.findall(r"\S+", text))
 
 
+_GREETING = re.compile(r"^(hi|hello|hey|dear)\b.{0,40},$", re.IGNORECASE)
+
+
+def body_sentences(text: str) -> list[str]:
+    """The body's sentences, without a greeting line ("Hi {{first_name}},"). Paragraph breaks end a
+    sentence too, so a closing link with no full stop still counts as one."""
+    lines = [line.strip() for line in text.strip().splitlines()]
+    if lines and _GREETING.match(lines[0]):
+        lines = lines[1:]
+    out: list[str] = []
+    for para in re.split(r"\n\s*\n", "\n".join(lines)):
+        para = " ".join(para.split())
+        out += [s for s in re.split(r"(?<=[.!?])[\"')\]]*\s+(?=[A-Z\"'(])", para) if s.strip()]
+    return out
+
+
 def length_violations(word_count: int, word_range: Optional[WordRange], tolerance: float) -> list[str]:
     """The brief's range, with tolerance, inside the absolute house floor and ceiling. Each
     message says how far off the draft is, so a revision knows how much to add or cut."""
@@ -90,10 +106,13 @@ def run(
     profile: ClientProfile,
     word_range: Optional[WordRange] = None,
     tolerance: Optional[float] = None,
+    sentence_max: Optional[int] = None,
 ) -> GateResult:
     flagged = find_violations(draft.body, profile)
     tolerance = config.word_range_tolerance() if tolerance is None else tolerance
     flagged += length_violations(count_words(draft.body), word_range, tolerance)
+    if sentence_max and (n := len(body_sentences(draft.body))) > sentence_max:
+        flagged.append(f"too many sentences: {n}, at most {sentence_max} (merge or cut {n - sentence_max})")
 
     if flagged:
         return GateResult(

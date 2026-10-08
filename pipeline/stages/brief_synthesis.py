@@ -29,6 +29,15 @@ def synthesize(
 
     notes_line = f"Must follow: {brief.notes}\n" if brief.notes else ""
     length = brief.word_range.label() if brief.word_range else "unspecified"
+    if brief.sequence_length:
+        # One outline entry per email, each with the whole per-email length: synthesis once split
+        # a 100-200 range across five emails ("~34 words" each) while the writer was told 100-200.
+        length = (f"{length} PER EMAIL; this is a sequence of {brief.sequence_length} emails, so give one outline "
+                  "entry per email and size each to the full per-email length")
+    if brief.sentence_max:
+        length += f", at most {brief.sentence_max} sentences" + (" per email" if brief.sequence_length else "")
+    if brief.sequence_notes:
+        notes_line += f"Across the sequence: {brief.sequence_notes}\n"
     if brief.format_description:
         notes_line = f"Content type ({brief.format}): {brief.format_description}\n" + notes_line
     if brief.icp_profile:
