@@ -17,6 +17,7 @@ def render(
     word_range: Optional[WordRange] = None,
     sentence_max: Optional[int] = None,
     sequence: bool = False,
+    standalone: bool = False,
 ) -> str:
     banned_words, banned_phrases = banned_lists(profile)
     lines = [f"CLIENT RULES for {profile.company_name or profile.client_id} (every draft is checked against these)"]
@@ -45,7 +46,13 @@ def render(
         lines += ["", f"Length: {word_range.label()} for the body."]
     if sentence_max:
         lines.append(f"At most {sentence_max} sentences in the body, not counting the greeting (checked by count).")
-    if sequence:
+    if sequence and standalone:
+        lines += ["", "Across the set (standalone emails: each reader gets only one, so repeating another "
+                  "email's offer or wording is allowed):",
+                  "- A planned anchor word appears exactly once, as an ordinary word, and never another email's "
+                  "anchor word.",
+                  "- Every email has a subject line and a preheader."]
+    elif sequence:
         knobs = config.sequence_lint()
         lines += ["", "Across the sequence (checked against every earlier email):",
                   f"- Don't open like an earlier email (no {knobs['opening_ngram']} words in a row from its opening).",

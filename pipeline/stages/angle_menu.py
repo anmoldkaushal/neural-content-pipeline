@@ -24,9 +24,14 @@ def _steering(brief: Brief) -> str:
         lines.append(brief.icp_profile)
     if brief.sequence_length:
         n = brief.sequence_length
-        lines.append(f"This is a sequence of {n} emails sent in order. Each angle is an arc across the whole "
-                     f"sequence: give its structure as exactly {n} steps, one per email, each saying what that "
-                     "email does and how it moves the reader toward the last one.")
+        if brief.standalone:
+            lines.append(f"These are {n} standalone emails, each to a different reader who gets only that one. Give "
+                         f"each angle's structure as exactly {n} steps, one per email, each saying what that email "
+                         "does on its own.")
+        else:
+            lines.append(f"This is a sequence of {n} emails sent in order. Each angle is an arc across the whole "
+                         f"sequence: give its structure as exactly {n} steps, one per email, each saying what that "
+                         "email does and how it moves the reader toward the last one.")
         if brief.plan_item_ids:
             lines.append("The content plan below fixes each email's topic and order. Keep them exactly: step N is "
                          "plan email N. The angles differ only in the thread that runs through the emails and in "

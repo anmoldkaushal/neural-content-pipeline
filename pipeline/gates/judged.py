@@ -36,21 +36,29 @@ def shared_rules(profile: ClientProfile, facts: str = "") -> str:
 
 
 def sequence_block(piece: int, n: int, step: str, plan_block: str, sequence_notes: str,
-                   earlier: list[str], judge_repeats: bool = True) -> str:
+                   earlier: list[str], judge_repeats: bool = True, standalone: bool = False) -> str:
     """What a judge of one email in a sequence is told: this email's own job, what the sequence as a
     whole must do, and the emails already sent. Without it each email was judged against the whole
     campaign's must-follow, so every judge asked every email to open on the turning point, sell the
     room and end on the same call to action, and five emails came out as one email five times."""
-    out = f"\nSEQUENCE: this draft is email {piece} of {n}, sent to the same reader after the earlier ones.\n"
+    if standalone:
+        out = (f"\nSEQUENCE: this draft is email {piece} of {n} standalone emails. Each goes to a different reader, "
+               "who gets only this one.\n")
+    else:
+        out = f"\nSEQUENCE: this draft is email {piece} of {n}, sent to the same reader after the earlier ones.\n"
     out += f"This email's job: {step}\n" + plan_block
     if sequence_notes:
         out += ("Across the whole sequence (the sequence as a whole meets these; this one email doesn't have "
                 f"to): {sequence_notes}\n")
     if earlier:
-        out += "Earlier emails in the sequence, already sent:\n" + "".join(f"--- {e}\n" for e in earlier)
+        out += ("Earlier emails in the set, for reference only:\n" if standalone else
+                "Earlier emails in the sequence, already sent:\n") + "".join(f"--- {e}\n" for e in earlier)
     out += ("Judge this email against its own job. Never ask it to cover another email's job or to repeat "
             "what an earlier email already said.")
-    if judge_repeats:  # the voice judge's call; the framing judge only reads rules
+    if standalone:
+        out += (" No reader sees two of these emails, so sharing an earlier email's offer, call to action or "
+                "phrasing is never a fault: don't flag it.")
+    elif judge_repeats:  # the voice judge's call; the framing judge only reads rules
         out += " Re-covering an earlier email's point, or reusing its opening, call to action or phrasing, is blocking."
     return out + "\n"
 

@@ -60,6 +60,9 @@ class Brief(BaseModel):
     # Must-follow for the sequence as a whole ("open the first email on the reader's turning
     # point"), kept apart from `notes` so no judge holds every email to all of them.
     sequence_notes: Optional[str] = None
+    # Each email goes to a different reader as the only one they get (ten first touches, not a
+    # drip), so emails may share an offer and its wording: no rule against repeating another email.
+    standalone: bool = False
     sentence_max: Optional[int] = None  # per piece (per email, for a sequence); None = no cap
 
     @model_validator(mode="before")

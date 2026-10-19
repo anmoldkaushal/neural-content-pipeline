@@ -5,7 +5,8 @@ Traces to a real five-email drip that passed every per-email gate and still read
 one email sent five times: three emails ended on the identical CTA sentence, two opened "You have
 built something real", and lines like "nobody is there to be sold to" recurred. Each email was
 judged alone, so nothing could see it. Findings quote the earlier line, so a revision knows exactly
-what to change; thresholds live in config (`sequence_lint`)."""
+what to change; thresholds live in config (`sequence_lint`). Standalone emails (`Brief.standalone`:
+each reader gets one) skip the repeat checks, since no reader sees two; the anchor checks still run."""
 from __future__ import annotations
 
 import re
@@ -60,7 +61,7 @@ def _count(word: str, text: str) -> int:
 
 
 def find_issues(draft: Draft, earlier: list[Draft], anchor: Optional[str] = None,
-                other_anchors: Optional[list[str]] = None) -> list[str]:
+                other_anchors: Optional[list[str]] = None, standalone: bool = False) -> list[str]:
     knobs = config.sequence_lint()
     issues: list[str] = []
     copy = f"{draft.subject_line or ''} {draft.preheader or ''} {draft.body}"
@@ -70,7 +71,7 @@ def find_issues(draft: Draft, earlier: list[Draft], anchor: Optional[str] = None
         if _count(other, copy):
             issues.append(f"{other!r} is another email's anchor word; leave it to that email")
 
-    for prev in earlier:
+    for prev in [] if standalone else earlier:
         k = prev.piece
         if run := _shared_run(opening(draft.body), opening(prev.body), knobs["opening_ngram"]):
             issues.append(f"the opening repeats email {k}'s opening ({run!r}); email {k} opened: "
@@ -92,10 +93,13 @@ def find_issues(draft: Draft, earlier: list[Draft], anchor: Optional[str] = None
 
 
 def run(draft: Draft, earlier: list[Draft], anchor: Optional[str] = None,
-        other_anchors: Optional[list[str]] = None) -> GateResult:
-    issues = find_issues(draft, earlier, anchor, other_anchors)
+        other_anchors: Optional[list[str]] = None, standalone: bool = False) -> GateResult:
+    issues = find_issues(draft, earlier, anchor, other_anchors, standalone)
     if issues:
         return GateResult(gate_name="sequence_lint", status=GateStatus.FAILED,
                           detail=f"{len(issues)} repeat/anchor issue(s) across the sequence", flagged_items=issues)
+    if standalone:
+        return GateResult(gate_name="sequence_lint", status=GateStatus.PASSED,
+                          detail="standalone emails: repeats across emails allowed; anchor words checked")
     detail = f"distinct from the {len(earlier)} earlier email(s)" if earlier else "first email"
     return GateResult(gate_name="sequence_lint", status=GateStatus.PASSED, detail=detail)

@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from pipeline import run_job
-from pipeline.gates import sequence_lint, style_lint
+from pipeline.gates import judged, sequence_lint, style_lint
 from pipeline.kb import content_plan, rulebook
 from pipeline.llm.transport import LLMResult
 from pipeline.schemas import Brief, ClientProfile, Draft, PlanItem
@@ -68,6 +68,27 @@ def test_sequence_lint_checks_anchor_words_and_subjects():
     assert "anchor word 'headroom' must appear exactly once in this email; it appears 2 time(s)" in issues
     assert "'reset' is another email's anchor word; leave it to that email" in issues
     assert any(i.startswith("the subject line is the same as email 1's") for i in issues)
+
+
+def test_standalone_emails_may_repeat_but_still_check_anchor_words():
+    two = _email(2, "Hi {{first_name}},\n\nYou have built something real, and the next step is yours.\n\n"
+                    "In that room nobody is there to be sold to, and nobody performs. Headroom is rare. Headroom "
+                    "matters.\n\nIf you would like to know more, you are warmly welcome to visit "
+                    "https://example.com/ to learn more.", subject="The room")
+    earlier = [_email(1, ONE, subject="The room!")]
+    assert sequence_lint.find_issues(two, earlier, anchor="headroom", standalone=True) == [
+        "anchor word 'headroom' must appear exactly once in this email; it appears 2 time(s)"]
+    assert sequence_lint.run(_email(2, ONE), earlier, standalone=True).status.value == "passed"
+    assert sequence_lint.run(_email(2, ONE), earlier).status.value == "failed"
+
+
+def test_standalone_judges_and_writer_are_told_repeats_are_allowed():
+    block = judged.sequence_block(2, 10, "time", "", "", ["Email 1: hi"], standalone=True)
+    assert "different reader" in block and "is blocking" not in block
+    rules = rulebook.render(ClientProfile(client_id="c", company_name="C", industry="i"), sequence=True,
+                            standalone=True)
+    assert "repeating another email's offer or wording is allowed" in rules
+    assert "words in a row from an earlier call to action" not in rules
 
 
 def test_sentences_skip_the_greeting_and_count_a_closing_link():

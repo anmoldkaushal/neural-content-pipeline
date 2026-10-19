@@ -376,7 +376,8 @@ def _run_gates(
                          sequence_context=seq["voice_context"] if seq else ""),
     ]
     if seq is not None:
-        results.append(sequence_lint.run(draft, seq["earlier"], seq["anchor"], seq["other_anchors"]))
+        results.append(sequence_lint.run(draft, seq["earlier"], seq["anchor"], seq["other_anchors"],
+                                         seq.get("standalone", False)))
     return results
 
 
@@ -506,7 +507,8 @@ def execute(
         client_dir,
         _context_query(brief, item, chosen_angle.headline, chosen_angle.pitch, " ".join(chosen_angle.structure)),
     )
-    rules = rulebook.render(profile, chosen_tone, brief.word_range, sentence_max=brief.sentence_max, sequence=bool(n))
+    rules = rulebook.render(profile, chosen_tone, brief.word_range, sentence_max=brief.sentence_max, sequence=bool(n),
+                           standalone=brief.standalone)
     facts = draft_stage.facts_block(kb_entries, chosen_angle.claims_used)
 
     # 7. brief synthesis
@@ -561,6 +563,10 @@ def execute(
             step = steps[piece - 1] if len(steps) >= piece else f"step {piece} of the arc"
             this_item = items[piece - 1] if len(items) >= piece else None
             spec["sequence"] = (
+                f"Write ONLY email {piece} of {n} standalone emails. This email's job: {step}. Each goes to a "
+                "different reader who gets only this one, so it must make sense alone; sharing the offer or "
+                "wording of another email is fine."
+            ) if brief.standalone else (
                 f"Write ONLY email {piece} of {n} in the sequence. This email's job: {step}. Don't repeat "
                 "what the earlier emails already said; move the reader one step on. Open and close it in "
                 "a way none of the earlier emails did."
@@ -575,8 +581,11 @@ def execute(
                 earlier=list(done),
                 anchor=this_item.anchor if this_item else None,
                 other_anchors=[i.anchor for i in items if i.anchor and i is not this_item],
-                voice_context=judged.sequence_block(piece, n, step, plan_text, brief.sequence_notes or "", earlier),
-                framing_context=judged.sequence_block(piece, n, step, plan_text, "", earlier, judge_repeats=False),
+                voice_context=judged.sequence_block(piece, n, step, plan_text, brief.sequence_notes or "", earlier,
+                                                    standalone=brief.standalone),
+                framing_context=judged.sequence_block(piece, n, step, plan_text, "", earlier, judge_repeats=False,
+                                                      standalone=brief.standalone),
+                standalone=brief.standalone,
             )
         else:
             seq = None
@@ -817,7 +826,7 @@ def _attach_email_copy(session: JobSession, package_data: dict, output_dir: Path
     updated = email.model_copy(update={f: v for f, v in selected.items() if f in ("subject_line", "preheader")})
     others = [e for e in emails if e.piece != piece]
     clash = [f"the subject line is the same as email {e.piece}'s ({e.subject_line!r})" for e in others
-             if updated.subject_line and e.subject_line and sequence_lint.same_copy(updated.subject_line, e.subject_line)]
+             if not session.brief.standalone and updated.subject_line and e.subject_line and sequence_lint.same_copy(updated.subject_line, e.subject_line)]
     results = [_email_copy_gate(updated, profile),
                GateResult(gate_name="sequence_lint", status=GateStatus.FAILED if clash else GateStatus.PASSED,
                           detail="subject line repeats another email's" if clash else "subject line is its own",
