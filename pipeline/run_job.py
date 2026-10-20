@@ -67,6 +67,17 @@ class JobBlocked(Exception):
     worse-quality output instead."""
 
 
+class MicrocopyRejected(JobBlocked):
+    """The picked micro-copy failed a judged gate before drafting. The job is left waiting for a
+    choice, so a different pick can be made from the same menu."""
+
+    def __init__(self, job_id: str, results: list[GateResult]) -> None:
+        self.job_id = job_id
+        self.results = results
+        items = [i for g in results if g.status == GateStatus.FAILED for i in (g.flagged_items or [g.detail])]
+        super().__init__("the picked micro-copy failed a judged gate: " + "; ".join(items))
+
+
 class PreflightIssues(JobBlocked):
     """The brief can't pass as written. No job is created: fix the brief, or call start() again
     with preflight_ack=issues to proceed knowing the client's rules win."""
@@ -150,6 +161,55 @@ def _with_microcopy(draft: Draft, selected: dict[str, str]) -> Draft:
         return draft
     lines = "\n".join(f"{field}: {text}" for field, text in selected.items())
     return draft.model_copy(update={"body": f"{lines}\n\n{draft.body}"})
+
+
+def judge_microcopy(
+    selected: dict[str, str],
+    brief: Brief,
+    tone: ToneChoice,
+    profile: ClientProfile,
+    kb_entries: list[KBEntry],
+    transport: ClaudeTransport,
+    facts: str = "",
+) -> list[GateResult]:
+    """The three judged gates on picked micro-copy alone, before drafting. A revision rewrites only
+    the body, so copy a judge rejects would fail every round and spend the retry budget for nothing.
+    The fields are judged together, so copy that repeats itself (a subheadline restating the
+    headline) is caught too."""
+    copy = Draft(job_id="microcopy", body="\n".join(f"{f}: {t}" for f, t in selected.items()),
+                 word_count=style_lint.count_words(" ".join(selected.values())))
+    scope = (f"\nThis is only the micro-copy picked for a {brief.format} ({', '.join(selected)}). The body is "
+             "written after it and is not shown: judge only these lines, and don't fail them for anything the "
+             "body would carry (sections, length, the full argument, the other fields).\n")
+    results = [
+        client_constraints_critic.run(copy, profile, transport=transport, facts=facts, sequence_context=scope),
+        claims_critic.run(copy, kb_entries, profile, transport=transport, reader=_reader(brief)),
+        voice_critic.run(copy, profile, transport=transport, tone=tone, must_follow=brief.notes,
+                         reader_profile=brief.icp_profile, facts=facts, sequence_context=scope),
+    ]
+    return [g.model_copy(update={"gate_name": f"{g.gate_name} (micro-copy)"}) for g in results]
+
+
+def _reader(brief: Brief) -> str:
+    """Who the piece is for, for the claims judge: the brief's audience and the ICP profile, so it
+    can tell a description of the reader's situation from a claim. Targeting context, never a fact."""
+    return "\n".join(t for t in (brief.audience, brief.icp_profile) if t)
+
+
+def _rejection_notes(copy: dict[str, str], results: list[GateResult]) -> list[str]:
+    """For JobRecord.microcopy_rejected: which copy a judge turned down, and why."""
+    label = ", ".join(f"{field} {text!r}" for field, text in copy.items())
+    return [f"{label}: {g.gate_name}: {item}" for g in results if g.status == GateStatus.FAILED
+            for item in (g.flagged_items or [g.detail])]
+
+
+# The voice judge still reads picked copy on top of the body, to catch a body that repeats or
+# contradicts it, but the copy itself was judged before drafting and a revision can't change it.
+_FIXED_COPY_NOTE = (
+    "\nThe lines before the body in 'field: text' form are micro-copy that was picked and checked before "
+    "drafting. The writer cannot change them, so don't flag the copy itself. Do flag the body where it "
+    "repeats or contradicts that copy.\n"
+)
 
 
 def _approved_item(client_dir: Path, item_id: str) -> PlanItem:
@@ -358,22 +418,27 @@ def _run_gates(
     seq: Optional[dict] = None,
 ) -> list[GateResult]:
     """`seq`, for one email of a sequence: its earlier emails, anchor words and the judges' sequence
-    context. The email's own subject line and preheader then stand in for picked micro-copy."""
+    context. The email's own subject line and preheader then stand in for picked micro-copy, and are
+    judged with the body, since the writer wrote them and a revision can fix them. A single piece's
+    picked copy was judged before drafting (judge_microcopy) and is fixed, so here the judges read
+    the body alone, except voice, which sees the copy to catch a body that repeats it."""
     if seq is not None:
         microcopy_result, selected = _email_copy_gate(draft, profile), _email_copy(draft)
-    as_read = _with_microcopy(draft, selected)
+        judged_read, voice_note = _with_microcopy(draft, selected), seq["voice_context"]
+    else:
+        judged_read, voice_note = draft, _FIXED_COPY_NOTE if selected else ""
     results = [
         microcopy_result,
         style_lint.run(draft, profile, word_range=brief.word_range, sentence_max=brief.sentence_max),
         client_constraints.run(draft, profile),
-        client_constraints_critic.run(as_read, profile, transport=transport, facts=facts,
+        client_constraints_critic.run(judged_read, profile, transport=transport, facts=facts,
                                       sequence_context=seq["framing_context"] if seq else ""),
         entailment.run(draft, kb_entries),
-        claims_critic.run(as_read, kb_entries, profile, transport=transport,
+        claims_critic.run(judged_read, kb_entries, profile, transport=transport, reader=_reader(brief),
                           theme_words=[seq["anchor"]] if seq and seq["anchor"] else None),
-        voice_critic.run(as_read, profile, transport=transport, tone=tone, must_follow=brief.notes,
-                         reader_profile=brief.icp_profile, facts=facts, earlier_notes=earlier_voice_notes,
-                         sequence_context=seq["voice_context"] if seq else ""),
+        voice_critic.run(_with_microcopy(draft, selected), profile, transport=transport, tone=tone,
+                         must_follow=brief.notes, reader_profile=brief.icp_profile, facts=facts,
+                         earlier_notes=earlier_voice_notes, sequence_context=voice_note),
     ]
     if seq is not None:
         results.append(sequence_lint.run(draft, seq["earlier"], seq["anchor"], seq["other_anchors"],
@@ -457,7 +522,12 @@ def execute(
     output_root: Path,
     transport: Optional[ClaudeTransport] = None,
     retry_budget: Optional[int] = None,
+    copy_judged: bool = False,
+    copy_kept_by: Optional[str] = None,
 ) -> Path:
+    """`copy_judged`: the picked micro-copy already passed judge_microcopy (the CLI's pick), so it
+    isn't judged again before drafting. `copy_kept_by`: a person's name, keeping their own pick
+    after the judges rejected it; the copy isn't judged again and the override goes on the job."""
     session = load_session(output_root, job_id)
     output_dir = output_root / "jobs" / job_id
     record = job_record.load(output_dir)
@@ -499,6 +569,20 @@ def execute(
         record.human_touchpoints.append(
             f"the sign-off has placeholders ({signature!r}): fill in `sender` in client.yaml, or map the merge "
             "fields in your sending tool")
+    facts = draft_stage.facts_block(kb_entries, chosen_angle.claims_used)
+    # 5b. the judged gates on the picked copy alone, for the same reason: a revision can't change
+    # it. Rejected, the job goes back to waiting for a pick instead of to a human.
+    if selected and copy_kept_by:
+        record.human_touchpoints.append(
+            f"micro-copy kept by {copy_kept_by} although the judges rejected it (see microcopy_rejected)")
+    elif selected and not copy_judged:
+        judged_copy = judge_microcopy(selected, brief, chosen_tone, profile, kb_entries, transport, facts)
+        if any(g.status == GateStatus.FAILED for g in judged_copy):
+            record.status = "awaiting_selection"
+            record.gate_results = judged_copy
+            record.microcopy_rejected += _rejection_notes(selected, judged_copy)
+            job_record.save(output_dir, record)
+            raise MicrocopyRejected(job_id, judged_copy)
 
     # 6. what the writer reads: rules, verified facts, plan item(s), relevant context
     items = _sequence_items(client_dir, brief, strict=False)
@@ -509,7 +593,6 @@ def execute(
     )
     rules = rulebook.render(profile, chosen_tone, brief.word_range, sentence_max=brief.sentence_max, sequence=bool(n),
                            standalone=brief.standalone)
-    facts = draft_stage.facts_block(kb_entries, chosen_angle.claims_used)
 
     # 7. brief synthesis
     working_spec = brief_synthesis.synthesize(
@@ -789,7 +872,8 @@ def attach_microcopy(
         as_read = _with_microcopy(Draft(**package_data["draft"]), selected)
         results += [
             client_constraints_critic.run(as_read, profile, transport=transport),
-            claims_critic.run(as_read, _load_kb_entries(client_dir), profile, transport=transport),
+            claims_critic.run(as_read, _load_kb_entries(client_dir), profile, transport=transport,
+                              reader=_reader(session.brief)),
             voice_critic.run(as_read, profile, transport=transport, tone=session.tone, must_follow=session.brief.notes,
                              reader_profile=session.brief.icp_profile),
         ]
@@ -836,7 +920,8 @@ def _attach_email_copy(session: JobSession, package_data: dict, output_dir: Path
         as_read = _with_microcopy(updated, _email_copy(updated))
         results += [
             client_constraints_critic.run(as_read, profile, transport=transport),
-            claims_critic.run(as_read, _load_kb_entries(client_dir), profile, transport=transport),
+            claims_critic.run(as_read, _load_kb_entries(client_dir), profile, transport=transport,
+                              reader=_reader(session.brief)),
             voice_critic.run(as_read, profile, transport=transport, tone=session.tone, must_follow=session.brief.notes,
                              reader_profile=session.brief.icp_profile),
         ]
@@ -877,8 +962,8 @@ def run(
     icp: Optional[str] = None,
 ) -> Path:
     """Non-interactive path for the CLI: all three phases back to back, taking the given angle,
-    tone and ICP (or the brief's own `icp:`) and the first unflagged option for each micro-copy
-    field. Without --tone, a picked ICP's default tone wins over the client's first preset. With
+    tone and ICP (or the brief's own `icp:`) and, per micro-copy field, the first unflagged option
+    the judged gates pass (_first_passing_microcopy). Without --tone, a picked ICP's default tone wins over the client's first preset. With
     accept_preflight, brief problems found before drafting are recorded and the job proceeds
     (client rules win)."""
     brief = intake.load_brief(brief_path)
@@ -904,8 +989,38 @@ def run(
     tone = tone_select.select_tone(profile, preset_name)
 
     session = build_microcopy_menu(session.job_id, angle_index, tone, clients_root, output_root, transport=transport)
-    selected = {
-        field: next((c.text for c in cands if not c.flags), "")
-        for field, cands in session.microcopy_menu.items()
-    }
-    return execute(session.job_id, selected, clients_root, output_root, transport=transport, retry_budget=retry_budget)
+    selected = _first_passing_microcopy(session, profile, _load_kb_entries(clients_root / client_id), transport,
+                                        output_root / "jobs" / session.job_id)
+    return execute(session.job_id, selected, clients_root, output_root, transport=transport, retry_budget=retry_budget,
+                   copy_judged=True)
+
+
+def _first_passing_microcopy(session: JobSession, profile: ClientProfile, kb_entries: list[KBEntry],
+                             transport: ClaudeTransport, output_dir: Path) -> dict[str, str]:
+    """The CLI's pick: field by field in menu order, the first unflagged option that passes the judged
+    gates alongside the fields already picked. A field with no unflagged option is left out, as
+    before. Each option passed over is recorded on the job with its findings. When every unflagged
+    option for a field fails, raises MicrocopyRejected with the last option's findings, leaving the
+    job waiting for a pick (resumable in the UI)."""
+    facts = draft_stage.facts_block(kb_entries, session.angles[session.angle_index].claims_used)
+    selected: dict[str, str] = {}
+    rejected: list[str] = []
+    try:
+        for field, cands in session.microcopy_menu.items():
+            results: list[GateResult] = []
+            for cand in (c for c in cands if not c.flags):
+                results = judge_microcopy({**selected, field: cand.text}, session.brief, session.tone, profile,
+                                          kb_entries, transport, facts)
+                if not any(g.status == GateStatus.FAILED for g in results):
+                    selected[field] = cand.text
+                    break
+                rejected += _rejection_notes({field: cand.text}, results)
+            else:
+                if results:
+                    raise MicrocopyRejected(session.job_id, results)
+    finally:
+        if rejected:
+            record = job_record.load(output_dir)
+            record.microcopy_rejected += rejected
+            job_record.save(output_dir, record)
+    return selected

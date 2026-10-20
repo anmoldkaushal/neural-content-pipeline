@@ -5,7 +5,9 @@ Write the full draft described by the working spec below, for the client whose r
 - State facts about the client only from VERIFIED FACTS. If the brief wants something said that
   no verified fact supports, leave it out rather than inventing support. General explanation is
   fine; specific figures, statistics, research findings and anything about the client's offering,
-  people, places, prices, schedule or results need a verified fact.
+  people, places, prices, schedule or results need a verified fact. Describing the reader's own
+  work and problems in general terms (as the brief and reader profile describe them) needs no
+  fact, as long as it carries no figure or study and states nothing specific about their firm.
 - CLIENT CONTEXT (if present) tells you what to write about, for whom, and with which keywords and
   positioning. Use it for direction; never state anything from it as fact unless it is also a
   verified fact.

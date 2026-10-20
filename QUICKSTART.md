@@ -148,8 +148,9 @@ one row per email for a sending tool.
 ## Picking an angle, tone or ICP from the CLI
 
 `run` defaults to angle candidate 0, no ICP, the client's first tone preset (or the ICP's default
-tone), and the first unflagged micro-copy option per field. Override the first three (an ICP can
-also be set as `icp:` in the brief YAML):
+tone), and per field the first unflagged micro-copy option that the judged gates pass alongside the
+fields already picked (if none passes, nothing is drafted and the job waits for your pick in the UI).
+Override the first three (an ICP can also be set as `icp:` in the brief YAML):
 
 ```bash
 python -m pipeline.cli run --client acme --brief brief.yaml --angle-index 1 --tone case_study --icp procurement_lead

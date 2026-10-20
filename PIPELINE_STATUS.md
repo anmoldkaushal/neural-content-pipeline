@@ -9,7 +9,7 @@
 | Intake | `pipeline/stages/intake.py` | Catches mechanical brief/KB gaps (and an unapproved plan item) before spending an LLM call. |
 | Angle menu | `pipeline/stages/angle_menu.py` | 2-3 cheap candidates so a bad direction never costs a full draft+gate cycle. Sees the content plan item and the most relevant client context. |
 | Tone select | `pipeline/stages/tone_select.py` | A dropdown-level decision from the client's pre-approved presets. A human may type a one-off tone (recorded as `ad_hoc` on the job and judged by voice_critic) or ask for one suggestion; it becomes a preset only when a human saves it. |
-| ICP (optional) | `pipeline/icps.py` | Who the piece is for, picked from the client's reviewed ICPs. Rendered once into `Brief.icp_profile` at `start` and passed to angle, micro-copy, synthesis, draft, tone suggestion and `voice_critic`, each time under a "targeting context, not facts" guard. The entailment and `claims_critic` gates are unchanged, so a pain point can shape an angle but never becomes a claim. |
+| ICP (optional) | `pipeline/icps.py` | Who the piece is for, picked from the client's reviewed ICPs. Rendered once into `Brief.icp_profile` at `start` and passed to angle, micro-copy, synthesis, draft, tone suggestion, `voice_critic` and `claims_critic`, each time under a "targeting context, not facts" guard. A pain point can shape an angle and be named as the reader's problem in general terms, but never becomes a claim about the client: `claims_critic` sees the reader (with the brief's audience) only to tell a description of the reader's situation from a claim, and still fails a figure, a study or anything specific about the reader's own firm. Entailment is unchanged. |
 | Micro-copy menu (optional) | `pipeline/stages/microcopy.py` | Runs after the angle is chosen and before drafting: per-format fields (`formats` in `config/pipeline_config.yaml`), each option pre-flagged by the deterministic lint so the human picks copy the gates will accept. Skippable (`choose_angle` then `execute` with no copy); a finished job can get copy afterwards via `build_microcopy_menu_after` -> `attach_microcopy`, which re-runs `microcopy_lint` and the two judged gates on the draft with the copy on top and leaves the package untouched if any fails. |
 | Brief synthesis | `pipeline/stages/brief_synthesis.py` | Compiles one targeted working spec instead of handing the drafter four raw documents. |
 | Draft | `pipeline/stages/draft.py` | The one full generation pass. The writer gets everything it will be judged on first: the client's rules (`pipeline/kb/rulebook.py`: style guide, tone, banned lists, do-not-say, framing rules, word range), verified facts with their text, the plan item, relevant context, and approved or past examples for voice. A sequence format (`email_sequence`, `sequence: N` in config) runs draft -> gates -> revise once per email: the angle is an arc with one step per email, each email is written knowing the ones before it, has its own retry budget, and the package holds every email under its own heading (`package["sequence"]`). A real brief for "drip emails 1 to 5" sent as one 100-200-word email squeezed a five-email arc into one body and failed on every round. A sequence can be written from the content plan (`plan_item_ids`, one approved item per email): the plan fixes each email's topic, order and anchor word, and the angle menu proposes only the thread through them. Brief `notes` apply to every email; `sequence_notes` to the sequence as a whole. Each email is written with its own subject line and preheader (no menu before drafting; a per-email menu offers alternatives on the finished job), and the package adds the client's sign-off (`sender` in client.yaml) and a `sequence.csv` export (optional `utm` on the link, export only). The first real drip run this way had no subject lines and read as one email sent five times. |
@@ -27,6 +27,19 @@ The orchestrator runs in three phases (`start` -> `build_microcopy_menu` -> `exe
 - **`microcopy_lint`** -- the picked micro-copy against the same house list and do-not-say terms
   as the body. Runs before drafting and blocks instead of retrying: redrafting the body can never
   fix a subject line. The judged gates also read the draft with the picked copy on top.
+- **Judged micro-copy check** (`run_job.judge_microcopy`) -- before drafting, the three judged gates
+  read the picked copy alone, all fields together. A revision rewrites only the body, so copy a
+  judge rejects used to fail every round: on 2026-10-20 a landing page spent its whole retry budget
+  on a CLI-picked headline that promised a result and a subheadline that repeated it. A rejected
+  pick sends the job back to awaiting_selection (pick again), not to a human; the CLI tries the
+  next option per field and stops only if none passes. Every option turned down is kept on the job
+  (`microcopy_rejected`, shown in the UI) with the judge's reason. This is the only place a single
+  piece's picked copy is judged: after drafting, the fact and framing judges read the body alone,
+  and the voice judge sees the copy only to catch a body that repeats it. Judging the copy again
+  there disagreed with this check and stalled a rerun the same day, flagging copy no revision could
+  change. A sequence email's own subject line and preheader are still judged with its body.
+  In the UI a person can keep a rejected pick ("Use it anyway", needs their name): the copy isn't
+  judged again and the override is recorded on the job, since the human is the judgement here.
 - **Sequence email copy** -- a sequence email's own subject line and preheader go through the same
   `microcopy_lint`, plus a check that both exist, but feed the revise loop: the writer wrote them
   with the body, so a revision can fix them.
@@ -54,7 +67,10 @@ The orchestrator runs in three phases (`start` -> `build_microcopy_menu` -> `exe
   numbers): a fact stated without an id is invisible to `entailment`. Told a sequence email's anchor word
   is a theme: as an ordinary word it isn't a claim, as a named feature ("the Reset") it is. A real
   drip email escalated after the writer, told only to use "Reset" once, named it as part of the
-  event three rounds running. Replaces the old self-check
+  event three rounds running. Since 2026-10-20 its findings carry a severity like the other judges
+  (only blocking fails; minor rides along as a note) and it is shown the reader: across five M&A
+  jobs about half its findings failed the reader's own problem ("searching runs into the evening")
+  as an unbacked claim, or failed a finding it called "low risk" itself. Replaces the old self-check
   stage, whose findings were computed and discarded. SKIPPED, never PASSED, if the transport is down.
 - **`voice_critic`** -- LLM judge, independent call, given the same style guide and full tone
   descriptions the writer got (it used to see preset names only). Reports SKIPPED (never PASSED)

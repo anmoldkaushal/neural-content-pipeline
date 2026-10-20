@@ -91,7 +91,7 @@ def _agent_review(client_dir: Path) -> str:
 
 
 def _reset_job() -> None:
-    for key in ("job_id", "step", "tone_choice", "blocked", "angle_pick", "preflight"):
+    for key in ("job_id", "step", "tone_choice", "blocked", "angle_pick", "preflight", "copy_rejected"):
         st.session_state.pop(key, None)
 
 
@@ -297,6 +297,14 @@ def _rounds(record) -> None:
                     st.caption(f"  ✎ {note}")
 
 
+def _rejected_copy(record) -> None:
+    """Micro-copy the judges turned down before drafting, and why."""
+    if record.microcopy_rejected:
+        with st.expander(f"Micro-copy turned down before drafting ({len(record.microcopy_rejected)})"):
+            for note in record.microcopy_rejected:
+                st.markdown(f"- {note}")
+
+
 def _finish_by_hand(record, job_id: str, output_dir: Path, key: str) -> None:
     """An escalated job: edit the last failing draft and package it (deterministic gates only)."""
     failed_path = output_dir / "last_failed_draft.json"
@@ -341,6 +349,7 @@ def render_output(job_id: str, where: str) -> None:
             st.info("This job stopped before drafting.")
         _gates(record)
         _rounds(record)
+        _rejected_copy(record)
         if record.human_touchpoints:
             with st.expander("Notes for human review", expanded=True):
                 for note in record.human_touchpoints:
@@ -388,6 +397,7 @@ def render_output(job_id: str, where: str) -> None:
                                         "Imports into most sending tools.")
         _gates(record)
         _rounds(record)
+        _rejected_copy(record)
         if record.human_touchpoints:
             with st.expander("Notes for human review"):
                 for note in record.human_touchpoints:
@@ -682,21 +692,43 @@ with tab_generate:
     elif step == "microcopy":
         st.subheader("Pick the micro-copy")
         st.caption("Options marked ⚠ would be rejected by the micro-copy gate. Pick another or write your own.")
+        if rejected := st.session_state.get("copy_rejected"):
+            st.error("Nothing was drafted: the judges rejected this copy, and a revision can't change it. "
+                     "Pick another option, write your own, or use it anyway.")
+            for item in rejected["items"]:
+                st.caption(f"⚠ {item}")
         selected = _microcopy_picker(session, job_id)
         empty = [field_label(f).lower() for f, text in selected.items() if not text.strip()]
+        # Overriding is for the exact copy the judges saw, by a named person, recorded on the job.
+        keep = rejected and {f: t.strip() for f, t in selected.items() if t.strip()} == rejected["copy"]
         with st.container(horizontal=True, vertical_alignment="center"):
             if st.button("← Back to angles", type="tertiary"):
+                st.session_state.pop("copy_rejected", None)
                 st.session_state["step"] = "angle"
                 st.session_state["angle_pick"] = session.angle_index
                 st.rerun()
             write = st.button("Write draft and run gates", type="primary", disabled=bool(empty))
+            anyway = keep and st.button("Use it anyway", disabled=not reviewer.strip(),
+                                        help="Draft with this copy although the judges rejected it. "
+                                             "The override is recorded on the job under your name.")
             if empty:
                 st.caption(f"To continue: write your {', '.join(empty)}.")
-        if write:
+            elif keep and not reviewer.strip():
+                st.caption("To use it anyway: enter your name in the sidebar.")
+        if write or anyway:
             st.session_state.pop("blocked", None)
+            st.session_state.pop("copy_rejected", None)
             try:
-                with st.spinner("Drafting and running gates. This is the slow step, usually a minute or more…"):
-                    run_job.execute(job_id, selected, CLIENTS_ROOT, OUTPUT_ROOT)
+                with st.spinner("Checking the copy, then drafting and running gates. This is the slow step, "
+                                "usually a minute or more…"):
+                    run_job.execute(job_id, selected, CLIENTS_ROOT, OUTPUT_ROOT,
+                                    copy_kept_by=reviewer.strip() if anyway else None)
+            except run_job.MicrocopyRejected as exc:
+                st.session_state["copy_rejected"] = {
+                    "copy": {f: t.strip() for f, t in selected.items() if t.strip()},
+                    "items": [f"{g.gate_name}: {i}" for g in exc.results
+                              if g.status.value == "failed" for i in (g.flagged_items or [g.detail])]}
+                st.rerun()
             except (run_job.JobBlocked, revise.RetryBudgetExceeded) as exc:
                 st.session_state["blocked"] = str(exc)
             st.session_state["step"] = "output"

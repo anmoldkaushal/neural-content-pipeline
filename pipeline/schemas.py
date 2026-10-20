@@ -273,6 +273,8 @@ class JobRecord(BaseModel):
     tone: Optional[ToneChoice] = None
     icp: Optional[str] = None
     microcopy_selected: dict[str, str] = Field(default_factory=dict)
+    # Micro-copy the judged gates rejected before drafting, and why: "field: 'text': finding".
+    microcopy_rejected: list[str] = Field(default_factory=list)
     rounds: list[RevisionRound] = Field(default_factory=list)
     # Brief problems found before drafting that a human chose to proceed past.
     preflight_overridden: list[str] = Field(default_factory=list)

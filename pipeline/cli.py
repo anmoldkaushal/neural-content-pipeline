@@ -172,6 +172,13 @@ def run_cmd(client_id: str, brief_path: str, tone_preset: Optional[str], icp: Op
         raise click.ClickException(
             f"the brief can't pass as written:\n{lines}\nFix the brief, or rerun with --accept-preflight."
         )
+    except run_job.MicrocopyRejected as exc:
+        lines = "\n".join(f"  - {g.gate_name}: {i}" for g in exc.results if g.status.value == "failed"
+                          for i in (g.flagged_items or [g.detail]))
+        raise click.ClickException(
+            f"no micro-copy option passed the judged gates, so nothing was drafted:\n{lines}\n"
+            f"Pick or write the copy yourself: job {exc.job_id} is waiting in the UI (Jobs > Resume in Generate)."
+        )
     click.echo(f"Job package written to {output_dir / 'package.json'}")
 
 

@@ -253,3 +253,127 @@ def test_custom_content_type_reaches_the_prompts(roots):
     run_job.execute(session.job_id, {}, clients, output, transport=transport)
     assert "a threaded reply to an unanswered email" in transport.saw("You are proposing content angles")[0]
     assert "a threaded reply to an unanswered email" in transport.saw("Write the full draft")[0]
+
+
+class CopyJudgeRejects(ScriptedTransport):
+    """Offers three options per micro-copy field; the voice judge rejects any copy (judged before
+    drafting) that contains `rejected`, and passes everything else."""
+
+    def __init__(self, rejected: str) -> None:
+        super().__init__()
+        self.rejected = rejected
+
+    def call(self, system_prompt: str, user_prompt: str) -> LLMResult:
+        if user_prompt.startswith("Generate short-copy candidates"):
+            self.prompts.append(user_prompt)
+            return LLMResult(available=True, text=json.dumps([
+                {"text": "Leverage the TI-4200", "strategy": "benefit-led"},
+                {"text": "Probe data you can repeat", "strategy": "curiosity-led"},
+                {"text": "Same reading on every shift", "strategy": "problem-led"}]))
+        if (user_prompt.startswith("You are an independent editorial critic") and "This is only the micro-copy" in user_prompt
+                and self.rejected in user_prompt.split("--- DRAFT ---")[1]):
+            self.prompts.append(user_prompt)
+            return LLMResult(available=True, text=json.dumps(
+                {"verdict": "off_voice", "notes": [{"severity": "blocking", "note": "names the product, not the problem"}]}))
+        return super().call(system_prompt, user_prompt)
+
+
+def test_rejected_copy_blocks_before_drafting_and_can_be_picked_again(roots):
+    clients, output = roots
+    transport = CopyJudgeRejects("Probe data you can repeat")
+    session = _through_menu(roots, transport)
+
+    with pytest.raises(run_job.MicrocopyRejected, match="names the product") as exc:
+        run_job.execute(session.job_id, {"subject_line": "Probe data you can repeat"}, clients, output, transport=transport)
+
+    assert [g.gate_name for g in exc.value.results] == [
+        "client_constraints_critic (micro-copy)", "claims_critic (micro-copy)", "voice_critic (micro-copy)"]
+    assert not transport.saw("Write the full draft")  # no draft, so no retry budget spent on the copy
+    record = json.loads((output / "jobs" / session.job_id / "job_record.json").read_text())
+    assert record["status"] == "awaiting_selection"  # back to the menu, not escalated
+    assert record["microcopy_rejected"] == [
+        "subject_line 'Probe data you can repeat': voice_critic (micro-copy): names the product, not the problem"]
+
+    output_dir = run_job.execute(session.job_id, {"subject_line": "Same reading on every shift"}, clients, output,
+                                 transport=transport)
+    assert json.loads((output_dir / "job_record.json").read_text())["status"] == "complete"
+
+
+def _run_cli(roots, transport, monkeypatch, tmp_path):
+    clients, output = roots
+    brief_path = tmp_path / "brief.yaml"
+    brief_path.write_text(json.dumps(_brief().model_dump(mode="json", exclude_none=True)))
+    monkeypatch.setattr(run_job, "ClaudeTransport", lambda: transport)
+    return run_job.run("exemplar", brief_path, clients, output)
+
+
+def test_cli_picks_the_first_copy_the_judges_pass(roots, monkeypatch, tmp_path):
+    transport = CopyJudgeRejects("Probe data you can repeat")
+
+    output_dir = _run_cli(roots, transport, monkeypatch, tmp_path)
+
+    record = json.loads((output_dir / "job_record.json").read_text())
+    assert record["status"] == "complete"
+    assert set(record["microcopy_selected"].values()) == {"Same reading on every shift"}
+    # each field is judged with the fields already picked, so copy that repeats itself is seen
+    copy_prompts = [p for p in transport.saw("You are an independent editorial critic") if "This is only the micro-copy" in p]
+    assert "subject_line: Same reading on every shift\npreheader: Same reading on every shift" in copy_prompts[-1]
+    assert len(transport.saw("You are an independent editorial critic")) == len(copy_prompts) + 1  # copy judged once
+    # every option passed over is on the job, with the judge's reason
+    assert len(record["microcopy_rejected"]) == 3
+    assert all("'Probe data you can repeat'" in n and "names the product" in n for n in record["microcopy_rejected"])
+
+
+def test_cli_stops_for_a_pick_when_no_copy_passes(roots, monkeypatch, tmp_path):
+    transport = CopyJudgeRejects("subject_line:")  # every subject line is rejected
+
+    with pytest.raises(run_job.MicrocopyRejected) as exc:
+        _run_cli(roots, transport, monkeypatch, tmp_path)
+
+    assert not transport.saw("Write the full draft")
+    record = json.loads((roots[1] / "jobs" / exc.value.job_id / "job_record.json").read_text())
+    assert record["status"] == "awaiting_selection"
+
+
+def test_after_drafting_the_judges_treat_picked_copy_as_fixed(roots):
+    clients, output = roots
+    transport = ScriptedTransport()
+    session = _through_menu(roots, transport)
+
+    run_job.execute(session.job_id, {"subject_line": "Probe data you can repeat"}, clients, output, transport=transport)
+
+    def on_the_draft(template):  # the judge's prompts on the drafted body, not on the copy alone
+        return [p for p in transport.saw(template) if BODY[:40] in p]
+    voice = on_the_draft("You are an independent editorial critic")[0]
+    assert "subject_line: Probe data you can repeat" in voice and "don't flag the copy itself" in voice
+    facts = on_the_draft("You are an independent fact checker")
+    assert facts and all("Probe data you can repeat" not in p for p in facts)
+    # (exemplar has no framing rules, so the compliance judge isn't called; it gets the same draft)
+
+
+def test_a_person_can_keep_copy_the_judges_rejected(roots):
+    clients, output = roots
+    transport = CopyJudgeRejects("Probe data you can repeat")
+    session = _through_menu(roots, transport)
+    picks = {"subject_line": "Probe data you can repeat"}
+    with pytest.raises(run_job.MicrocopyRejected):
+        run_job.execute(session.job_id, picks, clients, output, transport=transport)
+    judged_before = len(transport.prompts)
+
+    output_dir = run_job.execute(session.job_id, picks, clients, output, transport=transport, copy_kept_by="Anmol")
+
+    record = json.loads((output_dir / "job_record.json").read_text())
+    assert record["status"] == "complete" and record["microcopy_selected"] == picks
+    assert "micro-copy kept by Anmol although the judges rejected it (see microcopy_rejected)" in record["human_touchpoints"]
+    assert record["microcopy_rejected"]  # the judges' reasons stay on the job
+    copy_checks = [p for p in transport.prompts[judged_before:] if "This is only the micro-copy" in p]
+    assert not copy_checks  # not judged again
+
+
+def test_the_claims_judge_gets_the_reader_with_the_draft(roots):
+    clients, output = roots
+    transport = ScriptedTransport()
+    session = _through_menu(roots, transport)
+    run_job.execute(session.job_id, {}, clients, output, transport=transport)
+    assert "READER (who the piece is for; context, not facts):\nquality engineers" in \
+        transport.saw("You are an independent fact checker")[0]

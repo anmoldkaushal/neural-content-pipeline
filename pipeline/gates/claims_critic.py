@@ -2,7 +2,10 @@
 cannot see a fact stated in the prose without an id -- which is exactly what a writer that reads
 client context (strategy figures, competitor numbers, meeting notes) could do. This gate reads the
 draft cold against the verified facts and fails any statement about the client, and any specific
-figure or research claim, that no verified fact supports. It replaces the old self-check stage,
+figure or research claim, that no verified fact supports. Describing the reader's own situation in
+general terms is not a claim: the judge is shown who the reader is, so naming their problem doesn't
+fail as an unbacked fact. Each finding is blocking or minor, as in the other judges (judged.py), and
+only blocking findings fail; a finding with no severity counts as blocking. It replaces the old self-check stage,
 whose same-purpose findings were computed and then discarded.
 
 Same discipline as voice_critic.py: an independent call, and SKIPPED (never PASSED) when the
@@ -25,9 +28,12 @@ def run(
     profile: ClientProfile,
     transport: Optional[ClaudeTransport] = None,
     theme_words: Optional[list[str]] = None,
+    reader: str = "",
 ) -> GateResult:
     """`theme_words`: words the client's plan has the writer use (a sequence email's anchor word).
-    Used as an ordinary word, one isn't a claim; presented as a named feature of the offering, it is."""
+    Used as an ordinary word, one isn't a claim; presented as a named feature of the offering, it is.
+    `reader`: the brief's audience and reader profile, so the judge can tell a description of the
+    reader's situation from a claim. Targeting context, never a fact."""
     transport = transport or ClaudeTransport()
     themes = ""
     if theme_words:
@@ -43,7 +49,8 @@ def run(
         f"Verified facts:\n{facts}\n\n"
         f"{judged.shared_rules(profile)}\n"
         f"{themes}"
-        f"--- DRAFT ---\n{draft.body}\n--- END DRAFT ---"
+        + (f"READER (who the piece is for; context, not facts):\n{reader.strip()}\n\n" if reader.strip() else "")
+        + f"--- DRAFT ---\n{draft.body}\n--- END DRAFT ---"
     )
 
     parsed, result = call_json(transport, system_prompt="", user_prompt=user_prompt)
@@ -54,19 +61,20 @@ def run(
             detail=f"judge unavailable: {result.error or 'reply was not a JSON object'}",
         )
 
-    unsupported = parsed.get("unsupported") or []
-    if parsed.get("verdict") == "supported" and not unsupported:
-        return GateResult(gate_name="claims_critic", status=GateStatus.PASSED, detail="every client statement is backed")
-
-    items = []
-    for u in unsupported:
+    blocking, minor = [], []
+    for u in parsed.get("unsupported") or []:
         if isinstance(u, dict):
-            items.append(f"\"{u.get('quote', '')}\": {u.get('why', 'no verified fact supports this')}")
+            text = f"\"{u.get('quote', '')}\": {u.get('why', 'no verified fact supports this')}"
+            (minor if str(u.get("severity", "")).lower() == "minor" else blocking).append(text)
         else:
-            items.append(str(u))
-    return GateResult(
-        gate_name="claims_critic",
-        status=GateStatus.FAILED,
-        detail=f"{len(items) or 1} statement(s) not backed by a verified fact",
-        flagged_items=items or ["judge returned an unsupported verdict without naming the statement"],
-    )
+            blocking.append(str(u))  # fails closed: no severity counts as blocking
+    if blocking or (parsed.get("verdict") != "supported" and not minor):
+        return GateResult(
+            gate_name="claims_critic",
+            status=GateStatus.FAILED,
+            detail=f"{len(blocking) or 1} statement(s) not backed by a verified fact",
+            flagged_items=blocking or ["judge returned an unsupported verdict without naming the statement"],
+            notes=minor,
+        )
+    detail = "every client statement is backed" + (f", {len(minor)} minor note(s) for review" if minor else "")
+    return GateResult(gate_name="claims_critic", status=GateStatus.PASSED, detail=detail, notes=minor)

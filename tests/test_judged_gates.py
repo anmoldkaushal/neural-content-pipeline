@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 
-from pipeline.gates import client_constraints_critic, judged, voice_critic
+from pipeline.gates import claims_critic, client_constraints_critic, judged, voice_critic
 from pipeline.llm.transport import LLMResult
 from pipeline.schemas import ClientProfile, Draft, GateResult, GateStatus, ToneChoice
 from pipeline.stages.revise import next_revision_instruction
@@ -55,3 +55,31 @@ def test_revision_instruction_carries_every_failing_gate():
               for n in ("client_constraints_critic", "voice_critic")]
     text = next_revision_instruction(failed)
     assert "client_constraints_critic issue" in text and "voice_critic issue" in text
+
+
+def test_claims_judge_fails_only_on_blocking_findings():
+    minor = OneReply({"verdict": "unsupported", "unsupported": [
+        {"quote": "built on your data", "why": "close to kb-1", "severity": "minor"}]})
+    r = claims_critic.run(DRAFT, [], PROFILE, transport=minor)
+    assert r.status == GateStatus.PASSED and r.notes == ['"built on your data": close to kb-1'] and "1 minor" in r.detail
+
+    blocking = OneReply({"verdict": "unsupported", "unsupported": [
+        {"quote": "ready next week", "why": "no turnaround fact", "severity": "blocking"},
+        {"quote": "built on your data", "why": "close to kb-1", "severity": "minor"}]})
+    r = claims_critic.run(DRAFT, [], PROFILE, transport=blocking)
+    assert r.status == GateStatus.FAILED and r.flagged_items == ['"ready next week": no turnaround fact']
+    assert r.notes == ['"built on your data": close to kb-1']
+
+
+def test_claims_judge_fails_closed_without_severity():
+    t = OneReply({"verdict": "unsupported", "unsupported": [{"quote": "the best desk", "why": "no fact"}]})
+    assert claims_critic.run(DRAFT, [], PROFILE, transport=t).status == GateStatus.FAILED
+    t = OneReply({"verdict": "unsupported", "unsupported": []})
+    assert claims_critic.run(DRAFT, [], PROFILE, transport=t).status == GateStatus.FAILED
+
+
+def test_claims_judge_is_told_who_the_reader_is():
+    t = OneReply({"verdict": "supported", "unsupported": []})
+    claims_critic.run(DRAFT, [], PROFILE, transport=t, reader="The analyst at a boutique; searches by hand.")
+    assert "READER (who the piece is for; context, not facts):\nThe analyst at a boutique" in t.prompts[0]
+    assert "The reader's own situation is not a claim." in t.prompts[0]
