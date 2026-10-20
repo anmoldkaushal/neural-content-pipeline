@@ -74,6 +74,13 @@ def sequence_lint() -> dict[str, int]:
     return knobs
 
 
+def cold_reader_formats() -> list[str]:
+    """Formats a stranger reads cold, so the cold_reader gate checks that the piece says who is
+    writing and what is offered before relying on a name for it."""
+    return [str(f) for f in load().get("cold_reader_formats", ["email", "email_sequence", "linkedin_message",
+                                                               "landing_page"])]
+
+
 def word_range_tolerance(fallback: float = 0.1) -> float:
     return float(load().get("word_range_tolerance", fallback))
 

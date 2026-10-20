@@ -18,6 +18,7 @@ def render(
     sentence_max: Optional[int] = None,
     sequence: bool = False,
     standalone: bool = False,
+    read_cold: bool = False,
 ) -> str:
     banned_words, banned_phrases = banned_lists(profile)
     lines = [f"CLIENT RULES for {profile.company_name or profile.client_id} (every draft is checked against these)"]
@@ -42,6 +43,12 @@ def render(
     if profile.do_not_frame:
         lines += ["", "Framing rules (an independent reviewer reads the draft's meaning against each):"]
         lines += [f"- {rule}" for rule in profile.do_not_frame]
+    if read_cold:
+        where = "every email" if sequence and standalone else "email 1" if sequence else "the piece"
+        lines += ["", f"Read cold: the reader of {where} has never heard of the client. Say who is writing and what "
+                  "the offering is, in plain words, before relying on its name ('the desk', 'the platform'); a "
+                  "name the reader hasn't been told the meaning of explains nothing. An independent reader who "
+                  "sees only this text checks it."]
     if word_range is not None:
         lines += ["", f"Length: {word_range.label()} for the body."]
     if sentence_max:

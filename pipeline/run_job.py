@@ -31,6 +31,7 @@ import yaml
 from pipeline import config, icps, profile_review
 from pipeline.gates import (
     claims_critic,
+    cold_reader,
     judged,
     client_constraints,
     client_constraints_critic,
@@ -194,6 +195,14 @@ def _reader(brief: Brief) -> str:
     """Who the piece is for, for the claims judge: the brief's audience and the ICP profile, so it
     can tell a description of the reader's situation from a claim. Targeting context, never a fact."""
     return "\n".join(t for t in (brief.audience, brief.icp_profile) if t)
+
+
+def _read_cold(brief: Brief, piece: Optional[int]) -> bool:
+    """Whether a stranger reads this piece with nothing before it: a cold format, and for a sequence
+    sent to one reader, its first email only (standalone emails each go to a new reader)."""
+    if brief.format not in config.cold_reader_formats():
+        return False
+    return not brief.sequence_length or brief.standalone or (piece or 1) == 1
 
 
 def _rejection_notes(copy: dict[str, str], results: list[GateResult]) -> list[str]:
@@ -440,6 +449,8 @@ def _run_gates(
                          must_follow=brief.notes, reader_profile=brief.icp_profile, facts=facts,
                          earlier_notes=earlier_voice_notes, sequence_context=voice_note),
     ]
+    if _read_cold(brief, draft.piece):
+        results.append(cold_reader.run(_with_microcopy(draft, selected), transport=transport, audience=brief.audience))
     if seq is not None:
         results.append(sequence_lint.run(draft, seq["earlier"], seq["anchor"], seq["other_anchors"],
                                          seq.get("standalone", False)))
@@ -592,7 +603,7 @@ def execute(
         _context_query(brief, item, chosen_angle.headline, chosen_angle.pitch, " ".join(chosen_angle.structure)),
     )
     rules = rulebook.render(profile, chosen_tone, brief.word_range, sentence_max=brief.sentence_max, sequence=bool(n),
-                           standalone=brief.standalone)
+                           standalone=brief.standalone, read_cold=_read_cold(brief, 1))
 
     # 7. brief synthesis
     working_spec = brief_synthesis.synthesize(
@@ -656,8 +667,11 @@ def execute(
             )
             if this_item is not None:
                 spec["content_plan_item"] = content_plan.brief_block(this_item).strip()
-            spec["emails_already_written"] = [
-                f"Email {d.piece} (subject: {d.subject_line or '-'}): {d.body}" for d in done]
+            # A standalone email's reader sees no other email, so neither does its writer: shown the
+            # earlier ones, it treated what email 1 introduced as known ("the desk") in all the rest.
+            if not brief.standalone:
+                spec["emails_already_written"] = [
+                    f"Email {d.piece} (subject: {d.subject_line or '-'}): {d.body}" for d in done]
             earlier = [f"Email {d.piece}: {d.body}" for d in done]
             plan_text = content_plan.brief_block(this_item)
             seq = dict(

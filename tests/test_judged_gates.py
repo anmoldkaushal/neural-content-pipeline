@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 
-from pipeline.gates import claims_critic, client_constraints_critic, judged, voice_critic
+from pipeline.gates import claims_critic, client_constraints_critic, cold_reader, judged, voice_critic
 from pipeline.llm.transport import LLMResult
 from pipeline.schemas import ClientProfile, Draft, GateResult, GateStatus, ToneChoice
 from pipeline.stages.revise import next_revision_instruction
@@ -83,3 +83,37 @@ def test_claims_judge_is_told_who_the_reader_is():
     claims_critic.run(DRAFT, [], PROFILE, transport=t, reader="The analyst at a boutique; searches by hand.")
     assert "READER (who the piece is for; context, not facts):\nThe analyst at a boutique" in t.prompts[0]
     assert "The reader's own situation is not a claim." in t.prompts[0]
+
+
+def test_a_stranger_who_cant_tell_what_is_offered_fails_the_piece():
+    clear = OneReply({"verdict": "clear", "who": "an M&A research firm", "offer": "a research desk that finds buyers",
+                      "ask": "reply yes", "notes": []})
+    assert cold_reader.run(DRAFT, transport=clear).status == GateStatus.PASSED
+
+    # the judge says "clear" but can't name the offer: still a failure
+    vague = OneReply({"verdict": "clear", "who": "an M&A firm", "offer": "can't tell: 'the desk' is never explained",
+                      "ask": "reply yes", "notes": []})
+    r = cold_reader.run(DRAFT, transport=vague)
+    assert r.status == GateStatus.FAILED and r.flagged_items == ["a stranger can't tell what is offered from this piece alone"]
+
+
+def test_the_stranger_sees_only_the_piece():
+    t = OneReply({"verdict": "clear", "who": "x", "offer": "y", "ask": "z", "notes": []})
+    cold_reader.run(Draft(job_id="j", body="The desk finds buyers.", word_count=4), transport=t,
+                    audience="An M&A analyst at a boutique")
+    prompt = t.prompts[0]
+    assert "Who you are: An M&A analyst at a boutique. You know your own work" in prompt
+    assert "--- PIECE ---\nThe desk finds buyers.\n--- END PIECE ---" in prompt
+    assert "Verified facts" not in prompt and "Co" not in prompt.split("--- PIECE ---")[0].split("\n")[-3:]
+
+
+def test_the_writer_is_told_to_introduce_the_offering_when_read_cold():
+    from pipeline.kb import rulebook
+    from pipeline.schemas import Brief
+    from pipeline import run_job
+    assert "Read cold: the reader of every email" in rulebook.render(PROFILE, sequence=True, standalone=True, read_cold=True)
+    assert "Read cold" not in rulebook.render(PROFILE)
+    drip = Brief(client_id="c", goal="g", audience="a", format="email_sequence", sequence_length=3)
+    assert run_job._read_cold(drip, 1) and not run_job._read_cold(drip, 2)
+    assert run_job._read_cold(drip.model_copy(update={"standalone": True}), 2)
+    assert not run_job._read_cold(Brief(client_id="c", goal="g", audience="a", format="blog_post"), None)

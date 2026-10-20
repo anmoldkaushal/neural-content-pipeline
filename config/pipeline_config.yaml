@@ -25,6 +25,12 @@ sequence_lint:
   cta_ngram: 5
   phrase_ngram: 7
 
+# Formats a stranger reads cold: cold_reader checks that a reader who has never heard of the client
+# can tell who is writing, what is offered and what they are asked to do. A sequence sent to one
+# reader is checked on email 1 only; a standalone sequence (each email to a different reader) on
+# every email.
+cold_reader_formats: [email, email_sequence, linkedin_message, landing_page]
+
 # How much client context (strategy, past content, notes) a prompt may carry, in characters.
 context_budget_chars: 14000
 

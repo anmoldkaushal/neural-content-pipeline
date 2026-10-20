@@ -1,5 +1,6 @@
-"""Email sequences are written one email at a time, each knowing the ones before it and gated on
-its own; preflight sends a multi-piece goal to a sequence format; the voice judge sees the facts the
+"""Email sequences are written one email at a time and gated on their own: a sequence to one reader
+knows the emails before it, a standalone one (each email to a new reader) doesn't, and a stranger
+reads email 1, or every standalone email, cold; preflight sends a multi-piece goal to a sequence format; the voice judge sees the facts the
 writer may state and its own earlier notes, so it can't fail a confirmed fact or reverse itself."""
 from __future__ import annotations
 
@@ -25,10 +26,10 @@ def roots(tmp_path: Path) -> tuple[Path, Path]:
     return clients, tmp_path / "output"
 
 
-def _sequence(roots, transport, n=3):
+def _sequence(roots, transport, n=3, standalone=False):
     clients, output = roots
     brief = Brief(client_id="exemplar", goal="Introduce the TI-4200 to quality engineers", audience="QA leads",
-                  format="email_sequence", sequence_length=n)
+                  format="email_sequence", sequence_length=n, standalone=standalone)
     session = run_job.start("exemplar", brief, clients, output, transport=transport)
     run_job.choose_angle(session.job_id, 0, tone_select.custom_tone("Dry, exact"), output)
     return session.job_id
@@ -169,3 +170,22 @@ def test_the_framing_judge_reads_dont_address_narrowly():
 def test_each_gate_gets_two_revisions():
     from pipeline import config
     assert config.retry_budget() == 3
+
+
+def test_a_standalone_email_is_written_without_the_others(roots):
+    clients, output = roots
+    transport = ScriptedTransport()
+    run_job.execute(_sequence(roots, transport, standalone=True), {}, clients, output, transport=transport)
+    drafts = transport.saw("Write the full draft")
+    assert "Write ONLY email 2 of 3 standalone emails" in drafts[1]
+    assert "Email1 probe1" not in drafts[1]  # email 2's writer never sees email 1
+    # each standalone email reaches a new reader, so a stranger reads every one of them
+    assert len(transport.saw("You are a stranger receiving this piece cold")) == 3
+
+
+def test_a_drip_sequence_is_read_cold_on_email_one_only(roots):
+    clients, output = roots
+    transport = ScriptedTransport()
+    run_job.execute(_sequence(roots, transport), {}, clients, output, transport=transport)
+    cold = transport.saw("You are a stranger receiving this piece cold")
+    assert len(cold) == 1 and "Email1 probe1" in cold[0]

@@ -52,6 +52,8 @@ class ScriptedTransport:
             reply = {"body": BODY, "claims_used": ["kb-demo0001"]}
         elif p.startswith("You are an independent editorial critic"):
             reply = {"verdict": "on_voice", "notes": []}
+        elif p.startswith("You are a stranger receiving this piece cold"):
+            reply = {"verdict": "clear", "who": "a supplier", "offer": "a product", "ask": "reply", "notes": []}
         elif p.startswith("You are an independent compliance reviewer"):
             reply = {"verdict": "clean", "notes": []}
         elif p.startswith("You are an independent fact checker"):

@@ -57,6 +57,8 @@ class Transport:
             reply = {"body": FIXED, "claims_used": ["kb-demo0001"], "change_notes": ["removed the superlative"]}
         elif p.startswith("You are an independent editorial critic"):
             reply = self._judge("voice", {"verdict": "on_voice", "notes": []})
+        elif p.startswith("You are a stranger receiving this piece cold"):
+            reply = {"verdict": "clear", "who": "a supplier", "offer": "a product", "ask": "reply", "notes": []}
         elif p.startswith("You are an independent compliance reviewer"):
             reply = {"verdict": "clean", "notes": []}
         elif p.startswith("You are an independent fact checker"):

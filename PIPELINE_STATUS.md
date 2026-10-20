@@ -61,6 +61,15 @@ The orchestrator runs in three phases (`start` -> `build_microcopy_menu` -> `exe
 - **`entailment`** -- every claim used in a draft must trace to a *verified* KB entry. The
   highest-priority gate: same reasoning as `longevity-science-daily`'s `entailment_gate.py` -- an
   unsupported claim is the costliest failure mode. Checks the claim ids a draft declares.
+- **`cold_reader`** -- judged: reads the piece as a member of the brief's audience who has never
+  heard of the client, with no brief, facts or client name, and must say who is writing, what is
+  offered and what they are asked to do; "can't tell" on any of the three fails. Every other judge
+  reads with the facts, so it already knows the offering and can't notice a piece that never says
+  what it is. On 2026-10-20 ten standalone cold emails went out calling the product "the desk" with
+  no introduction: each writer had seen email 1, which introduced it. Runs on the formats in
+  `cold_reader_formats` (config); for a sequence sent to one reader, email 1 only; for a standalone
+  sequence, every email, whose writer now also no longer sees the other emails. The rulebook
+  tells the writer the same rule ("Read cold").
 - **`claims_critic`** -- the judged half of entailment: reads the prose cold against the verified
   facts and fails any statement about the client, and any specific figure or research claim, that
   no fact supports. Needed once the writer reads client context (strategy figures, competitor

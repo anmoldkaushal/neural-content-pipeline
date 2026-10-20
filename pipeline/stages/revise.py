@@ -24,6 +24,7 @@ _GATE_MEANING = {
     "claims_critic": "every statement about the client must be backed by a verified fact",
     "voice_critic": "voice and tone fit, and not reading as generic AI copy",
     "microcopy_lint": "the email's subject line and preheader: house and client terms, and present",
+    "cold_reader": "a stranger who has never heard of the client can tell who is writing, what is offered and what they are asked to do",
     "sequence_lint": "not reusing an earlier email's opening, call to action, subject or phrasing; the anchor word once",
 }
 
