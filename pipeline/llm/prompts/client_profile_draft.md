@@ -17,7 +17,9 @@ lists (empty if nothing applies):
   sentences describing the rule.
 
 Also draft the brief defaults a writer starts from: `audience` (who the client writes to, in a
-sentence or two) and `must_follow` (the standing instructions every piece must obey, one per line).
+sentence or two) and `must_follow` (the standing instructions, one per line). Write a rule for
+one kind of piece as "When the piece is <kind>: <rule>" ("When the piece is a medicine article: ..."),
+so it is applied only to pieces of that kind.
 Draft 2-4 `icps` (ideal customer profiles: the distinct kinds of reader the client writes to),
 using only what the documents show or clearly imply. Each has a short snake_case `name`, a one-
 sentence `summary`, `roles` (job titles), `company` (size, sector, region), and lists of `pains`,

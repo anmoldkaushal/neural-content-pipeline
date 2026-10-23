@@ -59,7 +59,8 @@ from pipeline.schemas import (
     RevisionRound,
     ToneChoice,
 )
-from pipeline.stages import angle_menu, brief_synthesis, intake, microcopy, package, preflight, research, revise, tone_select
+from pipeline.stages import (angle_menu, brief_synthesis, intake, microcopy, package, preflight, research, revise,
+                             rule_scope, tone_select)
 from pipeline.stages import draft as draft_stage
 
 
@@ -307,6 +308,13 @@ def start(
     if brief.icp and not brief.icp_profile:
         brief = brief.model_copy(update={"icp_profile": icps.render(icps.find(profile.icps, brief.icp))})
 
+    # Conditional must-follow rules only for the pieces they're about (rule_scope.py), before
+    # preflight and the angle menu: a medicine-article rule on a journey guide shaped its outline.
+    single = content_plan.get(client_dir, brief.plan_item_id) if brief.plan_item_id else None
+    piece = content_plan.sequence_block(_sequence_items(client_dir, brief, strict=False)) or content_plan.brief_block(single)
+    notes, left_out, scope_note = rule_scope.scope(brief, piece, transport=transport)
+    brief = brief.model_copy(update={"notes": notes})
+
     # Preflight first and without creating a job: a brief that can't pass costs one cheap call and
     # leaves no half-started job behind.
     preflight_notes: list[str] = []
@@ -324,6 +332,8 @@ def start(
     record.plan_item_id = brief.plan_item_id
     record.preflight_overridden = list(preflight_ack or [])
     record.human_touchpoints.extend(preflight_notes)
+    record.human_touchpoints += [f"must-follow rule left out, not this kind of piece: {r}" for r in left_out]
+    record.human_touchpoints += [scope_note] if scope_note else []
     output_dir = output_root / "jobs" / job_id
     # Jobs run on an unreviewed profile, but the package says so (see profile_review.py).
     if unreviewed := profile_review.not_final(client_dir):
