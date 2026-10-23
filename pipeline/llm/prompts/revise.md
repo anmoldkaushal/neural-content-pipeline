@@ -11,7 +11,8 @@ findings from every check that failed, and the client's rules. Edit the draft; d
   substance from the verified or public facts or the context's direction, never invented detail
   (a schedule, a method, a number) that no fact states.
 - State facts about the client only from VERIFIED FACTS; client context is direction, not fact.
-  History, figures and findings about the world need a PUBLIC fact (or a verified one).
+  History, figures and findings about the world need a PUBLIC fact (or a verified one). State it
+  plainly, never labelled in the copy as a public or world fact.
 - Write the body only, with no template text or bracketed placeholders; a greeting that needs the
   recipient's name uses the merge field {{first_name}}.
 - For one email of a sequence (the working spec has "sequence"), also return its subject_line and

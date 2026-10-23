@@ -7,7 +7,9 @@ Write the full draft described by the working spec below, for the client whose r
   fine; anything about the client's offering, people, places, prices, schedule or results needs a
   verified fact, and specific history, dates, figures, statistics and research findings about the
   world need a verified or PUBLIC fact. Use the public facts to cover the topic with substance
-  rather than padding around it; never present one as something the client did or offers. Describing the reader's own
+  rather than padding around it; never present one as something the client did or offers. State
+  it plainly: never tell the reader it is a public fact, a world fact or not a claim about the
+  client (that labelling is for you, not the copy). Describing the reader's own
   work and problems in general terms (as the brief and reader profile describe them) needs no
   fact, as long as it carries no figure or study and states nothing specific about their firm.
 - CLIENT CONTEXT (if present) tells you what to write about, for whom, and with which keywords and
