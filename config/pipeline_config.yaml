@@ -63,3 +63,13 @@ formats:
   landing_page:
     word_range: [300, 600]
     microcopy: {headline: 3, subheadline: 3, cta: 5}
+
+# Public facts (pipeline/stages/research.py): before drafting, a web-search call sources the
+# outside-world facts the outline needs (history, culture, background); each quote is checked on
+# its page in code. The agent confirms low-stakes ones from a reputable domain, or from two sites;
+# medical, legal and substance claims wait for a person. `reputable_domains` adds to the built-in
+# list (universities, governments, museums, Britannica...).
+research:
+  enabled: true
+  max_claims: 12
+  reputable_domains: []

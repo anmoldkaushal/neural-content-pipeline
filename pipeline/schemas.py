@@ -243,6 +243,9 @@ class GateResult(BaseModel):
     detail: str
     flagged_items: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)  # a judged gate's minor, non-blocking notes
+    # claims_critic only: blocking statements about the world rather than the client (history, a
+    # date, a finding), quoted, so research can try to source them before a revision cuts them.
+    world_statements: list[str] = Field(default_factory=list)
 
 
 class RevisionRound(BaseModel):

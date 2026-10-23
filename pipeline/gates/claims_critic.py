@@ -8,6 +8,10 @@ fail as an unbacked fact. Each finding is blocking or minor, as in the other jud
 only blocking findings fail; a finding with no severity counts as blocking. It replaces the old self-check stage,
 whose same-purpose findings were computed and then discarded.
 
+Public facts (pipeline/stages/research.py) support statements about the world, never about the
+client. A blocking statement the judge marks as about the world is passed back in
+world_statements, so the job can try to source it before a revision cuts it.
+
 Same discipline as voice_critic.py: an independent call, and SKIPPED (never PASSED) when the
 transport is unavailable."""
 from __future__ import annotations
@@ -42,12 +46,16 @@ def run(
                   "as a named feature, programme or part of the offering (\"the Reset\", \"our Headroom sessions\"), "
                   "it is a statement about the client like any other.\n\n")
     template = _PROMPT_PATH.read_text(encoding="utf-8")
-    facts = "\n".join(f"- [{e.id}] {e.claim}" for e in kb_entries if e.status == "verified") or "(none)"
+    verified = [e for e in kb_entries if e.status == "verified"]
+    facts = "\n".join(f"- [{e.id}] {e.claim}" for e in verified if e.kind != "public") or "(none)"
+    public = "\n".join(f"- [{e.id}] {e.claim} ({e.source_doc})" for e in verified if e.kind == "public")
     user_prompt = (
         f"{template}\n\n"
         f"Client: {profile.company_name} ({profile.industry})\n\n"
         f"Verified facts:\n{facts}\n\n"
-        f"{judged.shared_rules(profile)}\n"
+        + (f"Public facts (checked against public sources; they support statements about the world, never "
+           f"about the client):\n{public}\n\n" if public else "")
+        + f"{judged.shared_rules(profile)}\n"
         f"{themes}"
         + (f"READER (who the piece is for; context, not facts):\n{reader.strip()}\n\n" if reader.strip() else "")
         + f"--- DRAFT ---\n{draft.body}\n--- END DRAFT ---"
@@ -61,11 +69,14 @@ def run(
             detail=f"judge unavailable: {result.error or 'reply was not a JSON object'}",
         )
 
-    blocking, minor = [], []
+    blocking, minor, world = [], [], []
     for u in parsed.get("unsupported") or []:
         if isinstance(u, dict):
             text = f"\"{u.get('quote', '')}\": {u.get('why', 'no verified fact supports this')}"
-            (minor if str(u.get("severity", "")).lower() == "minor" else blocking).append(text)
+            is_minor = str(u.get("severity", "")).lower() == "minor"
+            (minor if is_minor else blocking).append(text)
+            if not is_minor and str(u.get("about", "")).lower() == "world" and str(u.get("quote", "")).strip():
+                world.append(str(u["quote"]).strip())
         else:
             blocking.append(str(u))  # fails closed: no severity counts as blocking
     if blocking or (parsed.get("verdict") != "supported" and not minor):
@@ -75,6 +86,7 @@ def run(
             detail=f"{len(blocking) or 1} statement(s) not backed by a verified fact",
             flagged_items=blocking or ["judge returned an unsupported verdict without naming the statement"],
             notes=minor,
+            world_statements=world,
         )
     detail = "every client statement is backed" + (f", {len(minor)} minor note(s) for review" if minor else "")
     return GateResult(gate_name="claims_critic", status=GateStatus.PASSED, detail=detail, notes=minor)

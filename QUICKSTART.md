@@ -47,6 +47,10 @@ want that coverage; everything else (including text-layer PDF extraction) runs r
    are confirmed by the agent (`confirmed_by: agent:kb-review`), facts not about the client are set
    aside, and the rest are ranked for you. It prints the top ten. `kb-review --client acme` runs it
    on anything not yet reviewed; `kb-review --undo` puts every agent decision back.
+4b. **Public facts need no setup**: each job's research step sources the history and background its
+   outline needs from public pages and checks every quote on its page. Low-stakes facts from a
+   reputable source are confirmed by the agent; medical, legal and substance claims wait in the UI
+   (Knowledge base -> Public facts), where you can also reject any the agent confirmed.
 5. **Check what needs you**: confirm or reject the ranked facts, in the UI (Knowledge base -> Needs
    you) or with `python -m pipeline.cli kb-verify --client acme`, which lists every pending fact.
    Confirming stamps `provenance.json` with your name.

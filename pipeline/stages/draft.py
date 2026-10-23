@@ -26,7 +26,7 @@ _NOT_SPEC = {"approved_examples"}
 def facts_block(kb_entries: list[KBEntry], planned_ids: list[str]) -> str:
     """Verified facts with their text, the angle's planned ones first. The only statements about
     the client a draft may make."""
-    verified = [e for e in kb_entries if e.status == "verified"]
+    verified = [e for e in kb_entries if e.status == "verified" and e.kind != "public"]
     planned = [e for e in verified if e.id in set(planned_ids)]
     others = [e for e in verified if e.id not in set(planned_ids)]
     lines = ["VERIFIED FACTS (the only statements about the client you may make; cite ids in claims_used):"]
@@ -34,6 +34,18 @@ def facts_block(kb_entries: list[KBEntry], planned_ids: list[str]) -> str:
     if others:
         lines.append("Also verified, use only if they genuinely help:")
         lines += [f"- [{e.id}] {e.claim}" for e in others]
+    return "\n".join(lines) + "\n" + public_block(kb_entries)
+
+
+def public_block(kb_entries: list[KBEntry]) -> str:
+    """Public facts (pipeline/stages/research.py): sourced statements about the world, with the
+    page each was checked on, so the writer can state history and background and link the source."""
+    public = [e for e in kb_entries if e.status == "verified" and e.kind == "public"]
+    if not public:
+        return ""
+    lines = ["PUBLIC FACTS (checked against reputable public sources; state them about the world, never as "
+             "something about the client; cite ids in claims_used; link the source where the brief asks for sources):"]
+    lines += [f"- [{e.id}] {e.claim} (source: {e.source_doc})" for e in public]
     return "\n".join(lines) + "\n"
 
 

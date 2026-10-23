@@ -51,7 +51,8 @@ def generate_angles(
 ) -> list[Angle]:
     transport = transport or ClaudeTransport()
     verified = [e for e in kb_entries if e.status == "verified"]
-    facts_block = "\n".join(f"- [{e.id}] {e.claim}" for e in verified)
+    facts_block = "\n".join(f"- [{e.id}] {'(public fact about the world, not the client) ' if e.kind == 'public' else ''}"
+                            f"{e.claim}" for e in verified)
     length = f"Length: {brief.word_range.label()}\n" if brief.word_range else ""
 
     template = _PROMPT_PATH.read_text(encoding="utf-8")

@@ -24,7 +24,7 @@ from pipeline.ledger import job_record, lessons, stats  # noqa: E402
 from pipeline.output import pdf_export  # noqa: E402
 from pipeline.output.pdf_export import field_label  # noqa: E402
 from pipeline.schemas import Brief, JobSession, KBEntry, TonePreset, WordRange  # noqa: E402
-from pipeline.stages import kb_add, kb_compile, kb_triage, kb_verify, revise, tone_select  # noqa: E402
+from pipeline.stages import kb_add, kb_compile, kb_triage, kb_verify, research, revise, tone_select  # noqa: E402
 
 CLIENTS_ROOT = REPO_ROOT / "clients"
 OUTPUT_ROOT = REPO_ROOT / "output"
@@ -1067,9 +1067,12 @@ with tab_kb:
     set_aside = [e for e in all_entries if e.get("status") == "excluded"]
     needs_n = sum(1 for e in all_entries if e.get("status") == "pending" and e.get("triage") == "needs_you")
     proposed_n = sum(1 for i in content_plan.load(client_dir) if i.status == "proposed")
-    needs_tab, review_tab, aside_tab, plan_tab, add_tab, profile_tab = st.tabs([
+    public_entries = research.load(client_dir)
+    public_waiting = sum(1 for e in public_entries if e.status == "pending")
+    needs_tab, review_tab, public_tab, aside_tab, plan_tab, add_tab, profile_tab = st.tabs([
         (f"Needs you (top {kb_triage.NEEDS_YOU_SHOWN} of {needs_n})" if needs_n > kb_triage.NEEDS_YOU_SHOWN
          else f"Needs you ({needs_n})" if needs_n else "Needs you"), "All facts",
+        f"Public facts ({public_waiting} need you)" if public_waiting else "Public facts",
         f"Set aside ({len(set_aside)})",
         f"Content plan ({proposed_n} to review)" if proposed_n else "Content plan", "Add facts", "Client profile"])
 
@@ -1078,6 +1081,43 @@ with tab_kb:
 
     with review_tab:
         kb_review(client_id, client_dir, reviewer)
+
+    with public_tab:
+        st.caption("Facts about the world (history, culture, background) the research step sourced from public "
+                   "pages for a job. Each quote was checked on its page. The agent confirmed the low-stakes ones "
+                   "from a reputable source or two sites; medical, legal and substance claims wait for you. They "
+                   "back statements about the world only, never about the client. A rejected fact isn't proposed again.")
+        if not public_entries:
+            st.caption("None yet: a job's research step adds them.")
+        else:
+            order = {"pending": 0, "verified": 1, "rejected": 2}
+            pub_rows = [{"select": False, "id": e.id, "status": e.status, "claim": e.claim,
+                         "source": e.source_doc, "quote": e.evidence or "",
+                         "by": e.confirmed_by or "", "why": e.triage_reason or ""}
+                        for e in sorted(public_entries, key=lambda e: order.get(e.status, 3))]
+            pub_edited = st.data_editor(
+                pub_rows, width="stretch", hide_index=True, key=f"public-{client_id}",
+                disabled=[c for c in pub_rows[0] if c != "select"],
+                column_config={"select": st.column_config.CheckboxColumn("Select", width="small"), "id": None,
+                               "claim": st.column_config.TextColumn("Fact", width="large"),
+                               "source": st.column_config.LinkColumn("Source", width="medium"),
+                               "quote": st.column_config.TextColumn("Quoted passage", width="medium"),
+                               "by": "Confirmed by", "why": st.column_config.TextColumn("Why", width="medium")},
+            )
+            picked_pub = [r["id"] for r in pub_edited if r["select"]]
+            p1, p2, _ = st.columns([1, 1, 3])
+            if p1.button(f"Confirm ({len(picked_pub)})", key=f"pub-ok-{client_id}",
+                         disabled=not picked_pub or not reviewer.strip()):
+                n_ok = research.confirm(client_dir, picked_pub, reviewer.strip())
+                st.session_state["flash"] = f"Confirmed {n_ok} public fact(s)."
+                st.rerun()
+            if p2.button(f"Reject ({len(picked_pub)})", key=f"pub-no-{client_id}",
+                         disabled=not picked_pub or not reviewer.strip()):
+                n_no = research.reject(client_dir, picked_pub, reviewer.strip())
+                st.session_state["flash"] = f"Rejected {n_no} public fact(s); they won't reach a draft."
+                st.rerun()
+            if not reviewer.strip():
+                st.caption("Enter your name in the sidebar to confirm or reject.")
 
     with aside_tab:
         if not set_aside:

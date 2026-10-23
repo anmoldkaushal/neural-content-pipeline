@@ -45,6 +45,9 @@ class ClaudeTransport:
         self._cli_path: Optional[str] = None
         self._sdk_client = None
         self.model = os.getenv(CLI_MODEL_ENV) or DEFAULT_CLI_MODEL
+        # Claude Code tools a call may use. Empty for every stage but research (web search and
+        # fetch, pipeline/stages/research.py): the writer and the judges never reach the web.
+        self.tools: list[str] = []
 
         if requested == "off":
             self.transport = "offline"
@@ -83,6 +86,8 @@ class ClaudeTransport:
         # The prompt goes over stdin, not argv: with client context and a previous draft in it,
         # a prompt can outgrow what a single command-line argument comfortably carries.
         cmd = [self._cli_path, "-p", "--model", self.model]
+        if self.tools:
+            cmd += ["--allowedTools", ",".join(self.tools)]
         try:
             proc = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=self.timeout, input=combined
@@ -103,11 +108,15 @@ class ClaudeTransport:
         if self._sdk_client is None:
             return LLMResult(available=False, error="sdk transport requested but not initialized")
         try:
+            extra = {}
+            if "WebSearch" in self.tools:  # the API's server-side search stands in for the CLI tool
+                extra["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 10}]
             response = self._sdk_client.messages.create(
                 model=self.model,
                 max_tokens=4096,
                 system=system_prompt or "",
                 messages=[{"role": "user", "content": user_prompt}],
+                **extra,
             )
         except Exception as exc:  # noqa: BLE001 - surface any SDK error as an unavailable result
             return LLMResult(available=False, error=str(exc))

@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import yaml
 
@@ -59,7 +59,7 @@ from pipeline.schemas import (
     RevisionRound,
     ToneChoice,
 )
-from pipeline.stages import angle_menu, brief_synthesis, intake, microcopy, package, preflight, revise, tone_select
+from pipeline.stages import angle_menu, brief_synthesis, intake, microcopy, package, preflight, research, revise, tone_select
 from pipeline.stages import draft as draft_stage
 
 
@@ -128,11 +128,27 @@ def _load_client_profile(client_dir: Path) -> ClientProfile:
 
 
 def _load_kb_entries(client_dir: Path) -> list[KBEntry]:
+    """Client facts, plus the verified public facts (kind "public", research.py) every stage may
+    use for statements about the world."""
     index_path = client_dir / "knowledge_base" / "kb_index.json"
-    if not index_path.exists():
-        return []
-    raw = json.loads(index_path.read_text(encoding="utf-8"))
-    return [KBEntry(**e) for e in raw]
+    raw = json.loads(index_path.read_text(encoding="utf-8")) if index_path.exists() else []
+    return [KBEntry(**e) for e in raw] + research.verified(client_dir)
+
+
+def _research_rules(profile: ClientProfile) -> str:
+    """What the researcher must respect: the client's framing rules and do-not-say terms."""
+    rules = [*profile.do_not_frame, *(f"Never say: {t}" for t in judged.banned_terms(profile))]
+    return ("CLIENT RULES (never source a claim these forbid the piece to make):\n"
+            + "".join(f"- {r}\n" for r in rules)) if rules else ""
+
+
+def _research_note(new: list[KBEntry], what: str) -> Optional[str]:
+    ok = sum(1 for e in new if e.status == "verified")
+    waiting = sum(1 for e in new if e.status == "pending")
+    if not (ok or waiting):
+        return None
+    return (f"research ({what}): {ok} public fact(s) confirmed by the agent"
+            + (f", {waiting} waiting for you in Knowledge base > Public facts" if waiting else ""))
 
 
 def _session_path(output_root: Path, job_id: str) -> Path:
@@ -457,6 +473,33 @@ def _run_gates(
     return results
 
 
+def _source_flagged(draft: Draft, gate_results: list[GateResult], record, gate_args: dict, draft_args: dict,
+                    transport: ClaudeTransport, seq: Optional[dict],
+                    sourcer: Callable[[list[str]], list[KBEntry]]) -> list[GateResult]:
+    """When the claims judge fails statements about the world, tries to source them and, if any are
+    now public facts, judges claims again on the same draft before a revision is spent. Cutting
+    them is what used to happen: the draft shrank, and the writer padded it with invented detail.
+    Updates the facts the writer and judges see for the rest of the job."""
+    flagged = next((g for g in gate_results if g.gate_name == "claims_critic"
+                    and g.status == GateStatus.FAILED and g.world_statements), None)
+    if flagged is None:
+        return gate_results
+    new = sourcer(flagged.world_statements)
+    record.stages_run.append(f"research (flagged statements, revision {draft.revision})")
+    if note := _research_note(new, f"statements flagged in revision {draft.revision}"):
+        record.human_touchpoints.append(note)
+    added = [e for e in new if e.status == "verified"]
+    if not added:
+        return gate_results
+    gate_args["kb_entries"] = gate_args["kb_entries"] + added
+    draft_args["facts"] = gate_args["facts"] = draft_args["facts"] + draft_stage.public_block(added)
+    judged_read = _with_microcopy(draft, _email_copy(draft)) if seq is not None else draft
+    again = claims_critic.run(judged_read, gate_args["kb_entries"], gate_args["profile"], transport=transport,
+                              reader=_reader(gate_args["brief"]),
+                              theme_words=[seq["anchor"]] if seq and seq["anchor"] else None)
+    return [again if g is flagged else g for g in gate_results]
+
+
 class _PieceFailed(Exception):
     """A piece used up its retry budget; carries what the caller needs to escalate it."""
 
@@ -476,10 +519,12 @@ def _draft_piece(
     retry_budget: int,
     transport: ClaudeTransport,
     seq: Optional[dict] = None,
+    sourcer: Optional[Callable[[list[str]], list[KBEntry]]] = None,
 ) -> tuple[Draft, list[GateResult], dict[str, int]]:
     """One piece through draft -> gates -> bounded revise rounds; a revision edits the previous
     draft. Returns (draft, final gate results, attempts per gate); raises _PieceFailed when a gate
-    is still failing after the retry budget."""
+    is still failing after the retry budget. `sourcer`: researches statements about the world the
+    claims judge flagged (research.for_statements), so a true sentence is sourced, not cut."""
     current = draft_stage.write_draft(job_id, spec, transport=transport, revision=0, **draft_args)
     current = current.model_copy(update={"piece": piece})
     attempts: dict[str, int] = {}
@@ -492,6 +537,9 @@ def _draft_piece(
         earlier_voice = [i for round_ in history for g in round_ if g.gate_name == "voice_critic"
                          for i in (g.flagged_items or [g.detail])]
         gate_results = _run_gates(current, transport=transport, earlier_voice_notes=earlier_voice, seq=seq, **gate_args)
+        if sourcer is not None:
+            gate_results = _source_flagged(current, gate_results, record, gate_args, draft_args, transport, seq,
+                                           sourcer)
         record.rounds.append(RevisionRound(
             revision=current.revision, word_count=current.word_count,
             gate_results=gate_results, change_notes=current.change_notes, piece=piece,
@@ -605,6 +653,23 @@ def execute(
     rules = rulebook.render(profile, chosen_tone, brief.word_range, sentence_max=brief.sentence_max, sequence=bool(n),
                            standalone=brief.standalone, read_cold=_read_cold(brief, 1))
 
+    # 6b. research: the public facts the outline needs (history, culture, background), sourced and
+    # checked against the pages themselves (research.py), so the piece can cover its topic
+    sourcer = None
+    if research.settings()["enabled"]:
+        found = research.for_piece(
+            client_dir, f"{brief.goal}\n{chosen_angle.headline}: {chosen_angle.pitch}", chosen_angle.structure,
+            _research_rules(profile), transport=transport)
+        record.stages_run.append("research")
+        if note := _research_note(found, "the outline"):
+            record.human_touchpoints.append(note)
+        if added := [e for e in found if e.status == "verified"]:
+            kb_entries = kb_entries + added
+            facts = draft_stage.facts_block(kb_entries, chosen_angle.claims_used)
+
+        def sourcer(statements: list[str]) -> list[KBEntry]:
+            return research.for_statements(client_dir, statements, _research_rules(profile), transport=transport)
+
     # 7. brief synthesis
     working_spec = brief_synthesis.synthesize(
         brief, chosen_angle, chosen_tone, kb_entries, transport=transport,
@@ -688,7 +753,7 @@ def execute(
             seq = None
         try:
             draft, gates, attempts = _draft_piece(job_id, spec, piece, record, output_dir, gate_args, draft_args,
-                                                  effective_retry_budget, transport, seq=seq)
+                                                  effective_retry_budget, transport, seq=seq, sourcer=sourcer)
         except _PieceFailed as f:
             where = f"email {piece} of {n}: " if piece else ""
             for g, k in f.attempts.items():
@@ -719,7 +784,7 @@ def execute(
 
     # 9. package
     final_package = package.build_package(
-        job_id, current_draft, session.microcopy_menu, gate_results, kb_entries, microcopy_selected=selected
+        job_id, current_draft, session.microcopy_menu, gate_results, gate_args["kb_entries"], microcopy_selected=selected
     )
     if n:
         final_package["sequence_length"] = n

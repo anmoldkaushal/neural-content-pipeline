@@ -6,7 +6,12 @@ Find every statement in the draft that needs support and has none in the verifie
   size, methods, partners, credentials or results;
 - any specific figure, statistic, date, ranking or research finding, whoever it is about.
 
-A statement is supported when a verified fact says the same thing, or something that plainly
+Public facts, where listed, were checked against reputable public sources. They support
+statements about the world (history, culture, a date, a finding) and never statements about the
+client: "the temple of Kom Ombo was dedicated to two gods" can rest on a public fact; "our journey
+visits Kom Ombo" needs a verified client fact.
+
+A statement is supported when a verified or public fact says the same thing, or something that plainly
 implies it. Rewording is fine; adding detail the fact doesn't contain is not. General explanation
 (what a practice is, why something matters, how a reader might feel) needs no support unless it
 cites a number or a study. Do not flag the call to action or opinions clearly framed as opinion.
@@ -29,4 +34,5 @@ Respond as a single JSON object:
 {"verdict": "supported", "unsupported": []}
 (verdict is "supported" or "unsupported"; for each unsupported statement give
 {"quote": "the exact sentence or phrase", "why": "what is missing, one short line",
-"severity": "blocking" or "minor"}).
+"severity": "blocking" or "minor", "about": "client" or "world"}; "world" means the statement is
+about history, culture, nature or research in general and says nothing about the client).

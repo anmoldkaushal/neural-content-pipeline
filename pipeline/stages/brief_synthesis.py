@@ -24,7 +24,8 @@ def synthesize(
     transport = transport or ClaudeTransport()
     verified_by_id = {e.id: e for e in kb_entries if e.status == "verified"}
     facts_block = "\n".join(
-        f"- [{cid}] {verified_by_id[cid].claim}" for cid in angle.claims_used if cid in verified_by_id
+        f"- [{cid}] {'(public fact about the world, not the client) ' if verified_by_id[cid].kind == 'public' else ''}"
+        f"{verified_by_id[cid].claim}" for cid in angle.claims_used if cid in verified_by_id
     )
 
     notes_line = f"Must follow: {brief.notes}\n" if brief.notes else ""

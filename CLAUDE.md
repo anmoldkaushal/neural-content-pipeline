@@ -2,7 +2,9 @@
 
 Brief + verified client context + client note + style guide -> a gated, reviewed draft. This
 repo is deliberately scoped to content creation only: no ideation, no primary research, no
-publish/distribute/analyze -- those live elsewhere or arrive as inputs.
+publish/distribute/analyze -- those live elsewhere or arrive as inputs. The one exception is
+public facts: sourcing well-established facts about the world a piece needs (history, culture,
+background) from public pages, below.
 
 - Quickstart: `QUICKSTART.md`. Run a job against the bundled synthetic `exemplar` client with no
   setup beyond an authenticated `claude` CLI.
@@ -14,13 +16,20 @@ publish/distribute/analyze -- those live elsewhere or arrive as inputs.
   (`pipeline/stages/kb_triage.py`, `confirmed_by: agent:kb-review`), which confirms only low-risk
   facts matched to their source in code and sends everything else to a person. Keep its policy in
   `decide()`, and keep agent confirmations visible (package, PDF) and undoable.
+- Public facts: `pipeline/stages/research.py`, the only stage with web search and fetch. It
+  sources what an outline needs, or what the claims judge flagged as an unbacked statement about
+  the world, and checks every quote on its page in code. The agent (`confirmed_by:
+  agent:research`) confirms only low-stakes facts from a reputable domain or two sites; medical,
+  legal and substance claims go to a person. Keep its policy in `decide()`. A public fact backs a
+  statement about the world, never about the client, and lives in `public_facts.json`, apart from
+  `kb_index.json` and `provenance.json`.
 - The house style gate: `pipeline/gates/style_lint.py`. Fails the run, does not warn. A client
   may only ADD to the banned-word/phrase lists via its own profile, never remove from the base
   lists.
 - Adding a client: see "Adding a new client" in `QUICKSTART.md` -- `init-client`, drop docs,
   `kb-compile` (runs the agent review), confirm what Needs you, `plan-approve`, then `run`.
 - Three knowledge layers, kept apart on purpose: facts (`kb_index.json`, the only thing a draft
-  may state), context (`knowledge_base/context/`, document sections the writer reads for
+  may state about the client; public facts cover the world), context (`knowledge_base/context/`, document sections the writer reads for
   direction) and plan (`content_plan.yaml`, planned pieces). Context and plan are derived from
   client documents and are gitignored like them.
 - The writer is shown every rule it is judged on (`pipeline/kb/rulebook.py`), and a revision edits

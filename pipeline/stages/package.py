@@ -26,6 +26,8 @@ def build_package(
             "source_doc": used_entries[cid].source_doc if cid in used_entries else None,
             # who confirmed the fact: a person's name, or the agent review (kb_triage.AGENT)
             "confirmed_by": used_entries[cid].confirmed_by if cid in used_entries else None,
+            # "public": a fact about the world from a public source (source_doc is its URL)
+            "kind": used_entries[cid].kind if cid in used_entries else None,
         }
         for cid in draft.claims_used
     ]
