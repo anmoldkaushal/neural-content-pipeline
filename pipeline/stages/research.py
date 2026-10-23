@@ -85,7 +85,13 @@ def verified(client_dir: Path) -> list[KBEntry]:
 
 
 class _Text(HTMLParser):
+    """Visible text as a reader sees it. Inline tags (a link, italics) add nothing between words, so
+    "Thebes, <a>Egypt</a>." stays "Thebes, Egypt."; only block tags break words apart. Joining every
+    text node with a space failed any quote that ran across a link."""
     _SKIP = {"script", "style", "noscript", "svg", "template"}
+    _BLOCK = {"p", "div", "br", "li", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "td", "th",
+              "table", "section", "article", "header", "footer", "nav", "aside", "blockquote", "figcaption",
+              "figure", "dd", "dt", "hr", "main", "pre", "title"}
 
     def __init__(self) -> None:
         super().__init__()
@@ -95,10 +101,14 @@ class _Text(HTMLParser):
     def handle_starttag(self, tag: str, attrs: Any) -> None:
         if tag in self._SKIP:
             self._skipping += 1
+        elif tag in self._BLOCK:
+            self.parts.append(" ")
 
     def handle_endtag(self, tag: str) -> None:
         if tag in self._SKIP and self._skipping:
             self._skipping -= 1
+        elif tag in self._BLOCK:
+            self.parts.append(" ")
 
     def handle_data(self, data: str) -> None:
         if not self._skipping:
@@ -108,7 +118,7 @@ class _Text(HTMLParser):
 def page_text(html: str) -> str:
     parser = _Text()
     parser.feed(html)
-    return " ".join(parser.parts)
+    return "".join(parser.parts)
 
 
 def fetch(url: str) -> Optional[str]:

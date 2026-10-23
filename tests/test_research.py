@@ -89,6 +89,13 @@ def test_a_blocked_page_is_checked_on_its_archived_copy(tmp_path):
     assert "Internet Archive" in new[0].triage_reason
 
 
+def test_a_quote_across_a_link_is_found():
+    html = '<p>Karnak is the site of the <a href="/t">Temple</a> of Amun at <i>Thebes</i>, Egypt.</p><p>Next</p>'
+    text = research.page_text(html)
+    assert research.quote_found("Karnak is the site of the Temple of Amun at Thebes, Egypt.", text)
+    assert "Egypt. Next" in " ".join(text.split())  # block tags still keep words apart
+
+
 def test_page_text_drops_scripts():
     assert "var x" not in research.page_text(PAGES["https://www.britannica.com/place/Kom-Ombo"])
 
