@@ -256,10 +256,12 @@ def draft_icps_cmd(client_id: str) -> None:
 
 @cli.command("export")
 @click.option("--job", "job_id", required=True, help="Job id under output/jobs/.")
-def export_cmd(job_id: str) -> None:
+@click.option("--reader", is_flag=True, help="Also write reader.pdf: the piece alone, to share.")
+def export_cmd(job_id: str, reader: bool) -> None:
     """Regenerate package.pdf from an existing job's package.json, without rerunning the model.
 
-    Useful after hand-editing package.json (e.g. picking a final title out of the options)."""
+    Useful after hand-editing package.json (e.g. picking a final title out of the options).
+    --reader also writes reader.pdf, the piece with its picked title and nothing for review."""
     output_dir = OUTPUT_ROOT / "jobs" / job_id
     package_path = output_dir / "package.json"
     if not package_path.exists():
@@ -271,6 +273,8 @@ def export_cmd(job_id: str) -> None:
 
     pdf_path = pdf_export.render_package_pdf(package, record, profile.company_name, output_dir / "package.pdf")
     click.echo(f"Rendered {pdf_path}")
+    if reader:
+        click.echo(f"Rendered {pdf_export.render_reader_pdf(package, output_dir / 'reader.pdf')}")
 
 
 @cli.command("approve")

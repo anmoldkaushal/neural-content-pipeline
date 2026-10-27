@@ -464,7 +464,8 @@ def _run_gates(
         judged_read, voice_note = draft, _FIXED_COPY_NOTE if selected else ""
     results = [
         microcopy_result,
-        style_lint.run(draft, profile, word_range=brief.word_range, sentence_max=brief.sentence_max),
+        style_lint.run(draft, profile, word_range=brief.word_range, sentence_max=brief.sentence_max,
+                       greeting_allowed=config.greeting_allowed(brief.format)),
         client_constraints.run(draft, profile),
         client_constraints_critic.run(judged_read, profile, transport=transport, facts=facts,
                                       sequence_context=seq["framing_context"] if seq else ""),
@@ -661,7 +662,8 @@ def execute(
         _context_query(brief, item, chosen_angle.headline, chosen_angle.pitch, " ".join(chosen_angle.structure)),
     )
     rules = rulebook.render(profile, chosen_tone, brief.word_range, sentence_max=brief.sentence_max, sequence=bool(n),
-                           standalone=brief.standalone, read_cold=_read_cold(brief, 1))
+                           standalone=brief.standalone, read_cold=_read_cold(brief, 1),
+                           greeting=config.greeting_allowed(brief.format))
 
     # 6b. research: the public facts the outline needs (history, culture, background), sourced and
     # checked against the pages themselves (research.py), so the piece can cover its topic
@@ -851,7 +853,8 @@ def finish_by_hand(
     results = [
         microcopy_lint.run(record.microcopy_selected, profile),
         style_lint.run(draft, profile, word_range=None if session.brief.sequence_length else session.brief.word_range,
-                       sentence_max=None if session.brief.sequence_length else session.brief.sentence_max),
+                       sentence_max=None if session.brief.sequence_length else session.brief.sentence_max,
+                       greeting_allowed=config.greeting_allowed(session.brief.format)),
         client_constraints.run(draft, profile),
     ] + [
         GateResult(gate_name=name, status=GateStatus.SKIPPED, detail=f"not re-run: finished by hand by {edited_by}")

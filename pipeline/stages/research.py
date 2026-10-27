@@ -51,6 +51,9 @@ _HIGH_STAKES = {"medical", "legal", "substance", "safety", "statistic", "contest
 # Reputable by domain: universities, governments, museums and encyclopaedias, plus any the config
 # adds. Anything else needs a second, independent site with the same passage checked.
 _REPUTABLE_SUFFIXES = (".edu", ".gov", ".mil", ".int", ".ac.uk", ".edu.au", ".ac.jp", ".gov.uk", ".museum")
+# A country's government, university and museum domains: egymonuments.gov.eg (Egypt's antiquities
+# ministry) ends in .eg, so the suffix list never matched it, and its Luxor facts waited for a person.
+_NATIONAL = re.compile(r"(^|\.)(gov|gob|gouv|govt|edu|ac|museum)\.[a-z]{2}$")
 _REPUTABLE_DOMAINS = {
     "britannica.com", "metmuseum.org", "britishmuseum.org", "si.edu", "smithsonianmag.com", "louvre.fr",
     "worldhistory.org", "nationalgeographic.com", "unesco.org", "who.int", "nih.gov", "jstor.org",
@@ -159,7 +162,7 @@ def reputable(url: str) -> bool:
     extra = {str(d).lower() for d in (config.load().get("research") or {}).get("reputable_domains") or []}
     if any(host == d or host.endswith("." + d) for d in _REPUTABLE_DOMAINS | extra):
         return True
-    return host.endswith(_REPUTABLE_SUFFIXES)
+    return host.endswith(_REPUTABLE_SUFFIXES) or bool(_NATIONAL.search(host))
 
 
 # ------------------------------------------------------------------ decision
@@ -284,6 +287,23 @@ def _merge(client_dir: Path, candidates: list[dict],
     return new
 
 
+def redecide(client_dir: Path) -> list[KBEntry]:
+    """Re-applies the domain rule to facts that wait for a person only because their one checked
+    source wasn't on the reputable list then. A fact a person has decided, or that waits for any
+    other reason (stakes, an unfetched page), stays as it is. Returns the facts it confirmed."""
+    entries, today, out = load(client_dir), dt.date.today(), []
+    for e in entries:
+        if (e.status == "pending" and e.confirmed_by is None and e.evidence
+                and (e.triage_reason or "").startswith("one checked source") and reputable(e.source_doc)):
+            e.status, e.confirmed_by, e.verified_at, e.triage = "verified", AGENT, today, "auto_verified"
+            e.triage_reason = f"quote checked on {domain(e.source_doc)}" + (
+                " (on the Internet Archive's copy of the page)" if "Internet Archive" in (e.triage_reason or "") else "")
+            out.append(e)
+    if out:
+        _save(client_dir, entries)
+    return out
+
+
 def settings() -> dict[str, Any]:
     cfg = config.load().get("research") or {}
     return {"enabled": bool(cfg.get("enabled", True)), "max_claims": int(cfg.get("max_claims", 12))}
@@ -300,8 +320,9 @@ def for_piece(
     """Sources the outside-world facts a piece's outline needs. Returns the rows it added."""
     task = ("THE PIECE:\n" + topic.strip() + "\nOutline:\n" + "".join(f"- {s}\n" for s in outline)
             + "\nList the public facts this piece needs to cover its topic well.")
+    confirmed = redecide(client_dir)
     candidates = find(task, rules, load(client_dir), transport or ClaudeTransport(), settings()["max_claims"])
-    return _merge(client_dir, candidates, fetcher)
+    return confirmed + _merge(client_dir, candidates, fetcher)
 
 
 def for_statements(

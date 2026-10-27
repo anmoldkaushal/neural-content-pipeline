@@ -6,7 +6,10 @@ Write the full draft described by the working spec below, for the client whose r
   no verified fact supports, leave it out rather than inventing support. General explanation is
   fine; anything about the client's offering, people, places, prices, schedule or results needs a
   verified fact, and specific history, dates, figures, statistics and research findings about the
-  world need a verified or PUBLIC fact. Use the public facts to cover the topic with substance
+  world need a verified or PUBLIC fact. Settled general knowledge (what and where a place is, what
+  a temple was dedicated to, what a tradition is) needs no fact: write about the piece's topic with
+  real substance even where no fact names it, but never say the client goes there or offers it
+  unless a verified fact does, and never state a contested claim or a myth as history. Use the public facts to cover the topic with substance
   rather than padding around it; never present one as something the client did or offers. State
   it plainly: never tell the reader it is a public fact, a world fact or not a claim about the
   client (that labelling is for you, not the copy). Describing the reader's own
@@ -20,8 +23,10 @@ Write the full draft described by the working spec below, for the client whose r
 - If "known_conflicts" is present, a human chose to proceed past a clash between the brief and
   the client's rules: the client's rules win.
 - Write the body only: no subject line, preheader, title or sign-off (the sign-off is added
-  afterwards). Leave no template text or bracketed placeholders. If the greeting needs the
-  recipient's name, use the merge field {{first_name}}.
+  afterwards). Leave no template text or bracketed placeholders. Only a piece sent to one person
+  (an email, a LinkedIn message) opens with a greeting; if it needs the recipient's name, use the
+  merge field {{first_name}}. A blog post, landing page or social post has no greeting and no merge
+  fields.
 - If the working spec has "sequence", you are writing one email of a sequence. Also write its
   subject_line (a few plain words a person would open) and preheader (one short line that extends
   the subject, never repeats it), held to the same client rules as the body. Open, close and phrase

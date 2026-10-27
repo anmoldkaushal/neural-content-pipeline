@@ -64,6 +64,18 @@ def count_words(text: str) -> int:
 
 
 _GREETING = re.compile(r"^(hi|hello|hey|dear)\b.{0,40},$", re.IGNORECASE)
+_MERGE_FIELD = re.compile(r"\{\{[^{}]*\}\}")
+
+
+def greeting_violations(text: str) -> list[str]:
+    """For a format nobody receives by name (a blog post, a landing page): no greeting line and no
+    merge field. A blog post passed every gate opening "Hello {{first_name}},"."""
+    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+    flagged = [f"greeting line in a piece with no recipient: {lines[0]!r} (remove it)"] if (
+        lines and _GREETING.match(lines[0])) else []
+    flagged += [f"merge field in a piece with no recipient: {m!r} (remove it)"
+                for m in dict.fromkeys(_MERGE_FIELD.findall(text))]
+    return flagged
 
 
 def body_sentences(text: str) -> list[str]:
@@ -107,8 +119,12 @@ def run(
     word_range: Optional[WordRange] = None,
     tolerance: Optional[float] = None,
     sentence_max: Optional[int] = None,
+    greeting_allowed: bool = True,
 ) -> GateResult:
+    """`greeting_allowed`: False for a format with no recipient (config.greeting_allowed)."""
     flagged = find_violations(draft.body, profile)
+    if not greeting_allowed:
+        flagged += greeting_violations(draft.body)
     tolerance = config.word_range_tolerance() if tolerance is None else tolerance
     flagged += length_violations(count_words(draft.body), word_range, tolerance)
     if sentence_max and (n := len(body_sentences(draft.body))) > sentence_max:

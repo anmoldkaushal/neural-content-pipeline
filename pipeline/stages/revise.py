@@ -21,8 +21,9 @@ _GATE_MEANING = {
     "client_constraints": "the client's do-not-say terms (exact match)",
     "client_constraints_critic": "the client's framing rules, judged on meaning",
     "entailment": "claim ids must be verified knowledge-base facts",
-    "claims_critic": "every statement about the client must be backed by a verified fact; history, dates, figures "
-                     "and findings about the world by a verified or public fact",
+    "claims_critic": "every statement about the client must be backed by a verified fact; specific dates, figures "
+                     "and findings about the world by a verified or public fact (settled general knowledge "
+                     "needs none)",
     "voice_critic": "voice and tone fit, and not reading as generic AI copy",
     "microcopy_lint": "the email's subject line and preheader: house and client terms, and present",
     "cold_reader": "a stranger who has never heard of the client can tell who is writing, what is offered and what they are asked to do",

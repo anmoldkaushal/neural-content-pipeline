@@ -4,6 +4,7 @@ paragraphs only (no tables, no justified text, no multi-column layout) so copy-p
 paragraph out of the PDF doesn't pick up layout artifacts."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -148,5 +149,53 @@ def render_package_pdf(
             story.append(Paragraph(f"&bull; {_escape(note)}", styles["note"]))
 
     story.append(Spacer(1, 0.2 * inch))
+    doc.build(story)
+    return output_path
+
+
+def _inline(text: str) -> str:
+    """The draft's light markdown (**bold**, [text](url), bare links) as reportlab markup, escaped
+    first. A relative link (/blog/...) only means something on the client's site: its text stays."""
+    out = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", _escape(text))
+    out = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", '<link href="\\2" color="#1f4e9a">\\1</link>', out)
+    out = re.sub(r"\[([^\]]+)\]\([^)\s]*\)", r"\1", out)
+    return re.sub(r'(?<!href=")(https?://[^\s)<"]+)(?![^<]*</link>)', r'<link href="\1" color="#1f4e9a">\1</link>', out)
+
+
+def render_reader_pdf(package: dict[str, Any], output_path: Path) -> Path:
+    """The piece as a reader sees it: picked title, subtitle and hook, then the body with its
+    headings and lists. Nothing for review (job id, options, gate results, notes), so it can be
+    shared as is; package.pdf stays the review copy."""
+    styles = _styles()
+    selected = package.get("microcopy_selected") or {}
+    title = str(selected.get("title") or selected.get("headline") or "")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    doc = SimpleDocTemplate(
+        str(output_path), pagesize=LETTER, topMargin=0.85 * inch, bottomMargin=0.85 * inch,
+        leftMargin=1 * inch, rightMargin=1 * inch, title=title,
+    )
+    story: list[Any] = []
+    if title:
+        story.append(Paragraph(_escape(title), styles["doc_title"]))
+    subtitle = selected.get("subtitle") or selected.get("subheadline")
+    if subtitle:
+        story.append(Paragraph(f"<i>{_escape(str(subtitle))}</i>", styles["body"]))
+    if selected.get("hook"):
+        story.append(Paragraph(f"<b>{_escape(str(selected['hook']))}</b>", styles["body"]))
+    if story:
+        story.append(Spacer(1, 0.15 * inch))
+    for para in str((package.get("draft") or {}).get("body", "")).split("\n\n"):
+        line = para.strip()
+        if not line:
+            continue
+        if line.startswith("### "):
+            story.append(Paragraph(_inline(line[4:]), styles["h3"]))
+        elif line.startswith("## "):
+            story.append(Paragraph(_inline(line[3:]), styles["h2"]))
+        elif all(l.strip().startswith(("- ", "* ")) for l in line.splitlines()):
+            for item in line.splitlines():
+                story.append(Paragraph(f"&bull; {_inline(item.strip()[2:])}", styles["candidate"]))
+        else:
+            story.append(Paragraph(_inline(line).replace("\n", "<br/>"), styles["body"]))
     doc.build(story)
     return output_path

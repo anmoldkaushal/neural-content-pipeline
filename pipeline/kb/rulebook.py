@@ -19,7 +19,10 @@ def render(
     sequence: bool = False,
     standalone: bool = False,
     read_cold: bool = False,
+    greeting: bool = True,
 ) -> str:
+    """`greeting`: False for a format with no recipient (config.greeting_allowed); the writer is
+    then told what style_lint fails."""
     banned_words, banned_phrases = banned_lists(profile)
     lines = [f"CLIENT RULES for {profile.company_name or profile.client_id} (every draft is checked against these)"]
 
@@ -49,6 +52,9 @@ def render(
                   "the offering is, in plain words, before relying on its name ('the desk', 'the platform'); a "
                   "name the reader hasn't been told the meaning of explains nothing. An independent reader who "
                   "sees only this text checks it."]
+    if not greeting:
+        lines += ["", "No greeting and no merge fields: this piece has no named recipient, so it never opens "
+                  "\"Hello {{first_name}},\" or similar (checked by match)."]
     if word_range is not None:
         lines += ["", f"Length: {word_range.label()} for the body."]
     if sentence_max:

@@ -62,6 +62,14 @@ def default_word_range(format_: str) -> tuple[int, int] | None:
     return int(value[0]), int(value[1])
 
 
+def greeting_allowed(format_: str | None) -> bool:
+    """Whether the format is sent to one person and may open with a greeting and a {{first_name}}
+    merge field. An unknown or missing format may, as before: the gate only fails what it knows."""
+    if not format_ or format_ not in formats():
+        return True
+    return bool(formats()[format_].get("greeting"))
+
+
 def email_copy_fields(format_: str | None) -> dict[str, int]:
     """Field -> alternatives for a sequence email's own copy (subject line, preheader)."""
     return {str(k): int(v) for k, v in (formats().get(format_ or "", {}).get("email_copy") or {}).items()}

@@ -53,3 +53,32 @@ def test_too_short_is_flagged():
     result = style_lint.run(_draft("too short"), _profile())
     assert result.status == GateStatus.FAILED
     assert any("too short" in item for item in result.flagged_items)
+
+
+def test_a_piece_with_no_recipient_fails_a_greeting_and_merge_field():
+    body = "Hello {{first_name}},\n\n" + " ".join(["word"] * 60)
+    assert style_lint.run(_draft(body), _profile()).status == GateStatus.PASSED  # an email may greet
+    result = style_lint.run(_draft(body), _profile(), greeting_allowed=False)
+    assert result.status == GateStatus.FAILED
+    assert any("greeting line" in f for f in result.flagged_items)
+    assert any("{{first_name}}" in f for f in result.flagged_items)
+
+
+def test_greeting_is_allowed_only_on_formats_sent_to_one_person():
+    from pipeline import config
+    assert config.greeting_allowed("email") and config.greeting_allowed("linkedin_message")
+    assert not config.greeting_allowed("blog_post") and not config.greeting_allowed("landing_page")
+
+
+def test_reader_pdf_has_the_piece_and_nothing_for_review(tmp_path):
+    from pypdf import PdfReader  # noqa: imported here: only this test reads a PDF back
+    from pipeline.output import pdf_export
+    package = {"draft": {"body": "Opening line.\n\n## A heading\n\n- **One** point\n- Two (https://example.org/x)"
+                         "\n\nSee [our guide](/blog/guide) and [the map](https://example.org/m)."},
+               "microcopy_selected": {"title": "The Title", "subtitle": "The subtitle"},
+               "compliance_report": {"gates": [{"gate_name": "voice_critic", "status": "passed", "detail": "ok"}]}}
+    path = pdf_export.render_reader_pdf(package, tmp_path / "reader.pdf")
+    text = "".join(page.extract_text() for page in PdfReader(str(path)).pages)
+    assert "The Title" in text and "A heading" in text and "One point" in text
+    assert "voice_critic" not in text and "**" not in text and "##" not in text
+    assert "See our guide and the map." in " ".join(text.split()) and "/blog/guide" not in text

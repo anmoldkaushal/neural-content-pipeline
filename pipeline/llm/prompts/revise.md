@@ -11,10 +11,13 @@ findings from every check that failed, and the client's rules. Edit the draft; d
   substance from the verified or public facts or the context's direction, never invented detail
   (a schedule, a method, a number) that no fact states.
 - State facts about the client only from VERIFIED FACTS; client context is direction, not fact.
-  History, figures and findings about the world need a PUBLIC fact (or a verified one). State it
-  plainly, never labelled in the copy as a public or world fact.
-- Write the body only, with no template text or bracketed placeholders; a greeting that needs the
-  recipient's name uses the merge field {{first_name}}.
+  Specific history, dates, figures and findings about the world need a PUBLIC fact (or a verified
+  one); settled general knowledge (what and where a place is, what it was built for) needs none.
+  When a finding says a sentence implies the client offers something, cut the implication, not
+  the topic. State facts plainly, never labelled in the copy as a public or world fact.
+- Write the body only, with no template text or bracketed placeholders. Only a piece sent to one
+  person (an email, a LinkedIn message) has a greeting, and one that needs the recipient's name
+  uses the merge field {{first_name}}; any other piece has no greeting and no merge fields.
 - For one email of a sequence (the working spec has "sequence"), also return its subject_line and
   preheader, revised if a finding names them and otherwise as they were.
 

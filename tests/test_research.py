@@ -134,6 +134,27 @@ def test_for_piece_stores_public_facts_and_leaves_the_jobs_transport_offline(tmp
     assert [e.claim for e in research.verified(tmp_path)] == [FACT]
 
 
+def test_a_national_government_domain_is_reputable():
+    assert research.reputable("https://egymonuments.gov.eg/en/monuments/luxor-temple")
+    assert research.reputable("https://www.gov.uk/x") and research.reputable("https://cairo.edu.eg/")
+    assert not research.reputable("https://gov.eg.example.com/") and not research.reputable("https://evil-gov.eg/")
+
+
+def test_redecide_confirms_only_what_waited_on_the_old_domain_rule(tmp_path):
+    def row(claim, url, reason, **kw):
+        return KBEntry(id=research._id(claim), claim=claim, kind="public", source_doc=url, evidence="q",
+                       status="pending", triage="needs_you", triage_reason=reason, **kw)
+    research._save(tmp_path, [
+        row("A", "https://egymonuments.gov.eg/a", "one checked source (egymonuments.gov.eg) and not one on the reputable list"),
+        row("B", "https://travel-blog.example.com/b", "one checked source (travel-blog.example.com) and not one on the reputable list"),
+        row("C", "https://egymonuments.gov.eg/c", "statistic claim: a person confirms these"),
+    ])
+    assert [e.claim for e in research.redecide(tmp_path)] == ["A"]
+    by_claim = {e.claim: e for e in research.load(tmp_path)}
+    assert by_claim["A"].status == "verified" and by_claim["A"].confirmed_by == research.AGENT
+    assert by_claim["B"].status == "pending" and by_claim["C"].status == "pending"
+
+
 def test_a_rejected_fact_is_not_proposed_or_checked_again(tmp_path):
     claims = [{"claim": FACT, "stakes": [], "sources": [_src("https://www.britannica.com/place/Kom-Ombo")]}]
     research.for_piece(tmp_path, "t", [], "", transport=_ResearchTransport(claims), fetcher=fetcher)

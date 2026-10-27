@@ -21,7 +21,8 @@ blocking issue only if it is genuinely new or a fix made the draft worse.
 
 Blocking (the piece should not go to a reader like this):
 - leftover template text or bracketed placeholders, other than a single first-name merge field
-  in the greeting such as {{first_name}}
+  in the greeting of an email or message such as {{first_name}}; a blog post, landing page or
+  social post that opens with a greeting or has a merge field
 - hype a reader would distrust: a superlative or a promised result, however worded
 - writing that plainly misses the style guide, the chosen tone, the content type or the reader
   profile when one is given (a pitch where a soft follow-up was asked for, a wall of features where

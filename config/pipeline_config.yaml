@@ -35,10 +35,13 @@ cold_reader_formats: [email, email_sequence, linkedin_message, landing_page]
 context_budget_chars: 14000
 
 # Per content type: which micro-copy fields the menu offers (field -> candidate count) and the
-# default word range [min, max] the UI pre-fills. A format not listed here falls back to
+# default word range [min, max] the UI pre-fills. `greeting: true` marks a format sent to one
+# person, which may open "Hi {{first_name}},"; on any other format style_lint fails a greeting or a
+# merge field (a blog post came out opening "Hello {{first_name}},"). A format not listed here falls back to
 # microcopy_caps above (title/subtitle/hook/cta).
 formats:
   email:
+    greeting: true
     word_range: [100, 200]
     microcopy: {subject_line: 5, preheader: 3, cta: 3}
   # Several emails in one job: the angle is an arc with one step per email, each email is drafted
@@ -47,11 +50,13 @@ formats:
   # emails): each email's subject line and preheader are written with its body, and
   # `email_copy` sets how many alternatives a per-email menu offers on the finished job.
   email_sequence:
+    greeting: true
     word_range: [100, 200]
     sequence: 5
     microcopy: {}
     email_copy: {subject_line: 5, preheader: 3}
   linkedin_message:
+    greeting: true
     word_range: [60, 120]
     microcopy: {opener: 3, cta: 3}
   social_post:

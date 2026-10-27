@@ -16,6 +16,20 @@ implies it. Rewording is fine; adding detail the fact doesn't contain is not. Ge
 (what a practice is, why something matters, how a reader might feel) needs no support unless it
 cites a number or a study. Do not flag the call to action or opinions clearly framed as opinion.
 
+Settled general knowledge about the world needs no support either: what any encyclopaedia's
+opening lines on the subject say, such as what and where a place is, which god a well-known temple
+was dedicated to, what a tradition is or where it comes from ("Philae is a temple island near
+Aswan, sacred to Isis"). It still needs a public fact when it carries a specific date, figure,
+ranking or research finding, or when it is contested, obscure or a popular myth. Flag a
+general-knowledge statement only if you believe it is wrong or disputed.
+
+The topic of a piece is not a claim about the client. Writing about a place, practice or tradition
+on the client's blog does not say the client goes there or offers it. A statement about the client
+is one that says what the client does, offers, includes or has ("our journey visits Philae", "you
+will meditate at Karnak", "the Modern Ashram's sites include Luxor"). Don't flag a sentence for
+mentioning a topic near the client's name, or for what a reader might infer from the piece's
+subject alone.
+
 The reader's own situation is not a claim. A statement describing the reader's work, problems or
 market in general terms (the kind of thing the READER section below describes: what their day
 involves, what goes wrong, what it costs them, framed as a statement or a question) needs no
